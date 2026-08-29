@@ -32,9 +32,11 @@ export interface Translations {
   team: string;
   reports: string;
   laundryTracking: string;
+  meetingRoomBooking: string;
   maintenanceTracking: string;
   workSchedule: string;
   otCheck: string;
+  payslip: string;
   settings: string;
   profile: string;
   enterpriseHub: string;
@@ -228,9 +230,11 @@ export const translations: Record<Language, Translations> = {
     team: 'ทีมงาน',
     reports: 'รายงานและสถิติ',
     laundryTracking: 'ข้อมูลการซัก-อบผ้า',
+    meetingRoomBooking: 'ห้องประชุม',
     maintenanceTracking: 'การแจ้งซ่อม',
     workSchedule: 'ตารางทำงาน',
     otCheck: 'ตรวจสอบ OT',
+    payslip: 'สลิปเงินเดือน',
     settings: 'การตั้งค่า',
     profile: 'โปรไฟล์',
     enterpriseHub: 'ศูนย์กลางองค์กร',
@@ -422,9 +426,11 @@ export const translations: Record<Language, Translations> = {
     team: 'Team',
     reports: 'Reports',
     laundryTracking: 'Laundry Tracking',
+    meetingRoomBooking: 'Meeting Rooms',
     maintenanceTracking: 'Maintenance & Repairs',
     workSchedule: 'Work Schedule',
     otCheck: 'OT Verification',
+    payslip: 'e-Pay Payslip',
     settings: 'Settings',
     profile: 'Profile',
     enterpriseHub: 'Enterprise Hub',

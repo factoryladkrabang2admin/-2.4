@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { LaundryOrder } from '../types';
 import { useLanguage } from '../contexts/LanguageContext';
-import { AdminUserAccount } from '../data/mockData';
+import { AdminUserAccount, isUserAdminOrSupervisor } from '../data/mockData';
 import { QRCodeSVG } from 'qrcode.react';
 import { getDepartmentColor, getGarmentColor } from '../utils/laundryColorHelper';
 import {
@@ -18,7 +18,9 @@ import {
   Sparkles,
   Image as ImageIcon,
   Trash2,
-  AlertTriangle
+  AlertTriangle,
+  Lock,
+  ShieldCheck
 } from 'lucide-react';
 
 interface LaundryDetailModalProps {
@@ -62,14 +64,16 @@ export const LaundryDetailModal: React.FC<LaundryDetailModalProps> = ({
 
   if (!isOpen || !order) return null;
 
-  // Check if current user has Admin or Supervisor permissions
+  // Check if current user has Admin or Supervisor permissions (ผู้ดูแลและแอดมินเพจ)
   const isUserAdmin = Boolean(
+    isUserAdminOrSupervisor(currentUser, true) ||
     currentUser?.isAdmin ||
     currentUser?.username?.toLowerCase() === 'reizosischen' ||
     (currentUser?.role && (
       currentUser.role.toLowerCase().includes('admin') ||
       currentUser.role.includes('ผู้ดูแลระบบ') ||
-      currentUser.role.includes('ผู้ดูแล')
+      currentUser.role.includes('ผู้ดูแล') ||
+      currentUser.role.includes('แอดมิน')
     )) ||
     currentUser?.permissions?.canDeleteData
   );
@@ -85,8 +89,9 @@ export const LaundryDetailModal: React.FC<LaundryDetailModalProps> = ({
     ? `${window.location.origin}${window.location.pathname}?track=${encodeURIComponent(order.trackingCode)}`
     : `https://ais-pre-zdwqcfau7cehjcy4fegllj-754000315222.asia-southeast1.run.app/?track=${encodeURIComponent(order.trackingCode)}`;
 
-  // Direct print function - immediately pops up native printer dialog with clean slip
+  // Direct print function - immediately pops up native printer dialog with clean slip (Admin Only)
   const handleDirectPrintTag = () => {
+    if (!isUserAdmin) return;
     setShowPrintView(true);
     
     // 1. Direct browser print trigger
@@ -238,14 +243,16 @@ export const LaundryDetailModal: React.FC<LaundryDetailModalProps> = ({
           </div>
 
           <div className="flex items-center gap-2">
-            <button
-              onClick={handleDirectPrintTag}
-              className="p-2 bg-white/15 hover:bg-white/25 text-white rounded-lg transition-colors flex items-center gap-1.5 text-xs font-bold cursor-pointer border border-white/20 shadow-xs"
-              title="พิมพ์ป้ายแท็ก ส่งไปยังเครื่องพิมพ์ทันที"
-            >
-              <Printer className="w-4 h-4 text-[#66affe]" />
-              <span className="hidden sm:inline">Print Tag</span>
-            </button>
+            {isUserAdmin && (
+              <button
+                onClick={handleDirectPrintTag}
+                className="p-2 bg-white/15 hover:bg-white/25 text-white rounded-lg transition-colors flex items-center gap-1.5 text-xs font-bold cursor-pointer border border-white/20 shadow-xs"
+                title={language === 'th' ? 'พิมพ์ป้ายแท็ก QR Code (เฉพาะผู้ดูแล/แอดมิน)' : 'Print Tag QR Code (Admin Only)'}
+              >
+                <Printer className="w-4 h-4 text-[#66affe]" />
+                <span className="hidden sm:inline">Print Tag</span>
+              </button>
+            )}
 
             <button
               onClick={onClose}
@@ -256,8 +263,8 @@ export const LaundryDetailModal: React.FC<LaundryDetailModalProps> = ({
           </div>
         </div>
 
-        {/* Printable Tag Preview Overlay if toggled */}
-        {showPrintView && (
+        {/* Printable Tag Preview Overlay if toggled (Admin Only) */}
+        {isUserAdmin && showPrintView && (
           <div className="bg-[#f3f3f4] p-4 border-b border-[#e2e8f0] flex flex-col sm:flex-row items-center justify-between gap-4 text-xs font-mono">
             <div className="flex items-center gap-4 bg-white p-3.5 rounded-lg border border-dashed border-gray-400">
               <QRCodeSVG value={trackingUrl} size={76} level="M" includeMargin={false} />
@@ -373,71 +380,120 @@ export const LaundryDetailModal: React.FC<LaundryDetailModalProps> = ({
 
             {/* Essential Details Body */}
             <div className="flex-1 p-6 overflow-y-auto space-y-4">
-              {/* QR Code & Live Link Tracking Card */}
-              <div className="bg-[#f8fafc] p-4 rounded-2xl border border-[#e2e8f0] flex flex-col md:flex-row items-center gap-5">
-                <div className="bg-white p-3.5 rounded-2xl border border-slate-200 shadow-xs flex flex-col items-center shrink-0">
-                  <QRCodeSVG 
-                    value={trackingUrl} 
-                    size={124} 
-                    level="M" 
-                    includeMargin={false}
-                    className="rounded-md"
-                  />
-                  <span className="font-mono text-xs font-bold text-[#002045] mt-2 bg-slate-100 px-2.5 py-0.5 rounded-md">
-                    {order.trackingCode}
-                  </span>
-                </div>
+              {/* QR Code & Live Link Tracking Card - Restricted to Admin & Supervisor only */}
+              {isUserAdmin ? (
+                <div className="bg-[#f8fafc] p-4 rounded-2xl border border-[#e2e8f0] flex flex-col md:flex-row items-center gap-5">
+                  <div className="bg-white p-3.5 rounded-2xl border border-slate-200 shadow-xs flex flex-col items-center shrink-0">
+                    <QRCodeSVG 
+                      value={trackingUrl} 
+                      size={124} 
+                      level="M" 
+                      includeMargin={false}
+                      className="rounded-md"
+                    />
+                    <span className="font-mono text-xs font-bold text-[#002045] mt-2 bg-slate-100 px-2.5 py-0.5 rounded-md">
+                      {order.trackingCode}
+                    </span>
+                  </div>
 
-                <div className="flex-1 w-full text-center md:text-left space-y-2.5">
-                  <div>
-                    <div className="flex items-center justify-center md:justify-start gap-1.5 text-xs font-bold text-[#0061a5] uppercase tracking-wider">
-                      <QrCode className="w-4 h-4 text-[#0061a5]" />
-                      <span>{language === 'th' ? 'QR Code ลิงก์ติดตามสถานะเรียลไทม์' : 'Live Tracking QR Code & Link'}</span>
+                  <div className="flex-1 w-full text-center md:text-left space-y-2.5">
+                    <div>
+                      <div className="flex items-center justify-center md:justify-start gap-1.5 text-xs font-bold text-[#0061a5] uppercase tracking-wider">
+                        <QrCode className="w-4 h-4 text-[#0061a5]" />
+                        <span>{language === 'th' ? 'QR Code ลิงก์ติดตามสถานะเรียลไทม์' : 'Live Tracking QR Code & Link'}</span>
+                        <span className="text-[10px] bg-emerald-100 text-emerald-800 font-bold px-1.5 py-0.5 rounded">
+                          {language === 'th' ? 'เฉพาะผู้ดูแล/แอดมิน' : 'Admin Only'}
+                        </span>
+                      </div>
+                      <p className="text-xs text-[#595c62] mt-1 flex items-center justify-center md:justify-start gap-1">
+                        <ImageIcon className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                        <span>
+                          {language === 'th' 
+                            ? 'เมื่อสแกน QR Code จะแสดงผลข้อมูลสถานะการซัก-อบผ้าเป็นรูปภาพ (Status Image Card) แบบเรียลไทม์ทันที' 
+                            : 'Scanning this QR code displays the real-time laundry status as a high-definition image card.'}
+                        </span>
+                      </p>
                     </div>
-                    <p className="text-xs text-[#595c62] mt-1 flex items-center justify-center md:justify-start gap-1">
-                      <ImageIcon className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
-                      <span>
-                        {language === 'th' 
-                          ? 'เมื่อสแกน QR Code จะแสดงผลข้อมูลสถานะการซัก-อบผ้าเป็นรูปภาพ (Status Image Card) แบบเรียลไทม์ทันที' 
-                          : 'Scanning this QR code displays the real-time laundry status as a high-definition image card.'}
-                      </span>
-                    </p>
-                  </div>
 
-                  {/* Quick Actions */}
-                  <div className="pt-2 flex flex-wrap items-center justify-center md:justify-start gap-2">
-                    <button
-                      type="button"
-                      onClick={handleDirectPrintTag}
-                      className="px-3 py-1.5 bg-[#002045] text-white hover:bg-[#003366] rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer shadow-xs"
-                    >
-                      <Printer className="w-3.5 h-3.5 text-[#66affe]" />
-                      <span>{language === 'th' ? 'พิมพ์ป้ายแท็ก (Print Tag)' : 'Print Tag'}</span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        navigator.clipboard.writeText(order.trackingCode);
-                        setCopied(true);
-                        setTimeout(() => setCopied(false), 2000);
-                      }}
-                      className="px-3 py-1.5 bg-white hover:bg-slate-100 text-[#002045] border border-slate-300 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer"
-                    >
-                      {copied ? (
-                        <>
-                          <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
-                          <span className="text-emerald-700">{language === 'th' ? 'คัดลอกรหัสแล้ว' : 'Copied Code!'}</span>
-                        </>
-                      ) : (
-                        <>
-                          <Copy className="w-3.5 h-3.5 text-slate-500" />
-                          <span>{language === 'th' ? 'คัดลอกรหัส' : 'Copy Code'}</span>
-                        </>
-                      )}
-                    </button>
+                    {/* Quick Actions */}
+                    <div className="pt-2 flex flex-wrap items-center justify-center md:justify-start gap-2">
+                      <button
+                        type="button"
+                        onClick={handleDirectPrintTag}
+                        className="px-3 py-1.5 bg-[#002045] text-white hover:bg-[#003366] rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer shadow-xs"
+                      >
+                        <Printer className="w-3.5 h-3.5 text-[#66affe]" />
+                        <span>{language === 'th' ? 'พิมพ์ป้ายแท็ก (Print Tag)' : 'Print Tag'}</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          navigator.clipboard.writeText(order.trackingCode);
+                          setCopied(true);
+                          setTimeout(() => setCopied(false), 2000);
+                        }}
+                        className="px-3 py-1.5 bg-white hover:bg-slate-100 text-[#002045] border border-slate-300 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer"
+                      >
+                        {copied ? (
+                          <>
+                            <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                            <span className="text-emerald-700">{language === 'th' ? 'คัดลอกรหัสแล้ว' : 'Copied Code!'}</span>
+                          </>
+                        ) : (
+                          <>
+                            <Copy className="w-3.5 h-3.5 text-slate-500" />
+                            <span>{language === 'th' ? 'คัดลอกรหัส' : 'Copy Code'}</span>
+                          </>
+                        )}
+                      </button>
+                    </div>
                   </div>
                 </div>
-              </div>
+              ) : (
+                <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200/80 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-slate-600">
+                  <div className="flex items-center gap-3">
+                    <div className="w-9 h-9 rounded-xl bg-slate-200/70 text-slate-500 flex items-center justify-center shrink-0">
+                      <Lock className="w-4 h-4" />
+                    </div>
+                    <div>
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-xs font-bold text-slate-800">
+                          {language === 'th' ? 'QR Code ติดตามสถานะงานผ้า' : 'Laundry Tracking QR Code'}
+                        </span>
+                        <span className="text-[10px] bg-slate-200 text-slate-700 font-bold px-1.5 py-0.5 rounded">
+                          {language === 'th' ? 'จำกัดสิทธิ์ผู้ดูแล/แอดมิน' : 'Admin Restricted'}
+                        </span>
+                      </div>
+                      <p className="text-[11px] text-slate-500 mt-0.5">
+                        {language === 'th' 
+                          ? 'การมองเห็นและสร้าง QR Code สงวนสิทธิ์เฉพาะผู้ดูแลระบบและแอดมินเพจเท่านั้น' 
+                          : 'QR Code display and print features are restricted to administrators and page managers.'}
+                      </p>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      navigator.clipboard.writeText(order.trackingCode);
+                      setCopied(true);
+                      setTimeout(() => setCopied(false), 2000);
+                    }}
+                    className="px-3 py-1.5 bg-white hover:bg-slate-100 text-[#002045] border border-slate-300 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer shrink-0 self-end sm:self-auto"
+                  >
+                    {copied ? (
+                      <>
+                        <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                        <span className="text-emerald-700">{language === 'th' ? 'คัดลอกแล้ว' : 'Copied!'}</span>
+                      </>
+                    ) : (
+                      <>
+                        <Copy className="w-3.5 h-3.5 text-slate-500" />
+                        <span className="font-mono">{order.trackingCode}</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+              )}
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 {/* Department, Garment Type & Submitter Details Box */}

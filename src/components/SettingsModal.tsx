@@ -38,7 +38,17 @@ import {
 } from 'lucide-react';
 import { useLanguage, LANGUAGE_CONFIGS } from '../contexts/LanguageContext';
 import { FlagIcon } from './FlagIcon';
-import { DEFAULT_ADMIN_USER, AdminUserAccount, getAllOtStaffList, saveUpdatedUserCredentials } from '../data/mockData';
+import { 
+  DEFAULT_ADMIN_USER, 
+  MARK_ADMIN_USER,
+  EXAM_USER,
+  AdminUserAccount, 
+  getAllOtStaffList, 
+  saveUpdatedUserCredentials,
+  getDeletedStaffIds,
+  addDeletedStaffId,
+  removeDeletedStaffId
+} from '../data/mockData';
 import { realtimeHub } from '../services/realtimeService';
 
 export type SettingsTabType = 'language' | 'general' | 'notifications' | 'security';
@@ -63,6 +73,10 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   const [savedSuccess, setSavedSuccess] = useState(false);
   const [copiedPassword, setCopiedPassword] = useState(false);
   const [showAdminPass, setShowAdminPass] = useState(false);
+  const [copiedMarkPassword, setCopiedMarkPassword] = useState(false);
+  const [showMarkPass, setShowMarkPass] = useState(false);
+  const [copiedExamPassword, setCopiedExamPassword] = useState(false);
+  const [showExamPass, setShowExamPass] = useState(false);
 
   // Determine if current active user is the super admin (reizosischen) or an administrator
   const activeUser = currentUser || (() => {
@@ -74,9 +88,11 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     }
   })();
   const isSuperAdmin = (activeUser?.username || '').toLowerCase() === 'reizosischen';
+  const isMarkAdmin = (activeUser?.username || '').toLowerCase() === 'mark';
   const isUserAdmin = Boolean(
     activeUser?.isAdmin ||
     isSuperAdmin ||
+    isMarkAdmin ||
     (activeUser?.role && (
       activeUser.role.toLowerCase().includes('admin') ||
       activeUser.role.includes('ผู้ดูแลระบบ') ||
@@ -96,8 +112,9 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
   // Registered users and staff directory state
   const [registeredUsers, setRegisteredUsers] = useState<AdminUserAccount[]>([]);
+  const [deletedStaffIds, setDeletedStaffIds] = useState<string[]>(() => getDeletedStaffIds());
   const [userSearchQuery, setUserSearchQuery] = useState('');
-  const [userFilterCategory, setUserFilterCategory] = useState<'all' | 'customized' | 'admin' | 'canEdit'>('all');
+  const [userFilterCategory, setUserFilterCategory] = useState<'all' | 'customized' | 'admin' | 'canEdit' | 'deleted'>('all');
   const [visiblePasswords, setVisiblePasswords] = useState<Record<string, boolean>>({});
   const [copiedUserPass, setCopiedUserPass] = useState<string | null>(null);
   const [userToDelete, setUserToDelete] = useState<string | null>(null);
@@ -130,6 +147,30 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   const [adminUsernameInput, setAdminUsernameInput] = useState(adminAuth.username || 'reizosischen');
   const [adminPasswordInput, setAdminPasswordInput] = useState(adminAuth.password || '724754');
 
+  const [markAuth, setMarkAuth] = useState<AdminUserAccount>(() => {
+    try {
+      const saved = localStorage.getItem('proworkflow_mark_admin_auth');
+      return saved ? JSON.parse(saved) : MARK_ADMIN_USER;
+    } catch {
+      return MARK_ADMIN_USER;
+    }
+  });
+
+  const [markUsernameInput, setMarkUsernameInput] = useState(markAuth.username || 'Mark');
+  const [markPasswordInput, setMarkPasswordInput] = useState(markAuth.password || '717681');
+
+  const [examAuth, setExamAuth] = useState<AdminUserAccount>(() => {
+    try {
+      const saved = localStorage.getItem('proworkflow_exam_admin_auth');
+      return saved ? JSON.parse(saved) : EXAM_USER;
+    } catch {
+      return EXAM_USER;
+    }
+  });
+
+  const [examUsernameInput, setExamUsernameInput] = useState(examAuth.username || 'Exam');
+  const [examPasswordInput, setExamPasswordInput] = useState(examAuth.password || '1234567890');
+
   // Load and refresh settings data
   const refreshSettingsData = () => {
     try {
@@ -139,9 +180,22 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
       setAdminUsernameInput(data.username || 'reizosischen');
       setAdminPasswordInput(data.password || '724754');
 
-      // Update registered users
+      const savedMark = localStorage.getItem('proworkflow_mark_admin_auth');
+      const markData = savedMark ? JSON.parse(savedMark) : MARK_ADMIN_USER;
+      setMarkAuth(markData);
+      setMarkUsernameInput(markData.username || 'Mark');
+      setMarkPasswordInput(markData.password || '717681');
+
+      const savedExam = localStorage.getItem('proworkflow_exam_admin_auth');
+      const examData = savedExam ? JSON.parse(savedExam) : EXAM_USER;
+      setExamAuth(examData);
+      setExamUsernameInput(examData.username || 'Exam');
+      setExamPasswordInput(examData.password || '1234567890');
+
+      // Update registered users and deleted staff
       const users = realtimeHub.getStoredRegisteredUsers();
       setRegisteredUsers(users);
+      setDeletedStaffIds(getDeletedStaffIds());
 
       // Update counts
       const orders = realtimeHub.getStoredLaundryOrders();
@@ -172,6 +226,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
       if (msg.type === 'USER_REGISTERED' || msg.type === 'SYNC_ALL') {
         const users = realtimeHub.getStoredRegisteredUsers();
         setRegisteredUsers(users);
+        setDeletedStaffIds(getDeletedStaffIds());
       }
     });
 
@@ -184,6 +239,18 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     navigator.clipboard?.writeText(adminPasswordInput);
     setCopiedPassword(true);
     setTimeout(() => setCopiedPassword(false), 1500);
+  };
+
+  const handleCopyMarkPassword = () => {
+    navigator.clipboard?.writeText(markPasswordInput);
+    setCopiedMarkPassword(true);
+    setTimeout(() => setCopiedMarkPassword(false), 1500);
+  };
+
+  const handleCopyExamPassword = () => {
+    navigator.clipboard?.writeText(examPasswordInput);
+    setCopiedExamPassword(true);
+    setTimeout(() => setCopiedExamPassword(false), 1500);
   };
 
   const handleToggleUserPassword = (usernameKey: string) => {
@@ -199,16 +266,67 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     setTimeout(() => setCopiedUserPass(null), 1500);
   };
 
-  const handleDeleteUser = (username: string) => {
+  const handleDeleteStaff = (account: { name: string; username: string; employeeId?: string; originalEmpId?: string }) => {
+    const empId = account.employeeId || account.originalEmpId || account.username;
+    const username = account.username;
+    
+    // 1. Delete from registered custom users
     realtimeHub.deleteRegisteredUser(username);
+    if (empId && empId.toLowerCase() !== username.toLowerCase()) {
+      realtimeHub.deleteRegisteredUser(empId);
+    }
+    
+    // 2. Add to deleted staff IDs list
+    if (empId) addDeletedStaffId(empId);
+    if (username) addDeletedStaffId(username);
+    
+    // 3. Update local state
     const updated = realtimeHub.getStoredRegisteredUsers();
     setRegisteredUsers(updated);
+    const updatedDeleted = getDeletedStaffIds();
+    setDeletedStaffIds(updatedDeleted);
     setUserToDelete(null);
+    
+    // 4. Record audit activity
+    realtimeHub.addActivity({
+      id: `act-del-staff-${Date.now()}`,
+      type: 'member_joined' as const,
+      user: account.name || username,
+      title: 'ลบพนักงานออกจากระบบ',
+      highlightText: empId ? `[รหัส ${empId}]` : `@${username}`,
+      subtitle: `ลบสิทธิ์การเข้าถึงของ @${username} แล้ว`,
+      timestamp: 'เมื่อสักครู่',
+      badgeType: 'system' as const
+    });
+    
+    // 5. Broadcast real-time sync
+    realtimeHub.broadcast('SYNC_ALL', { entity: 'staff_deleted', empId, username });
+
     setUserActionToast({
-      message: language === 'th' ? `ลบการตั้งค่าบัญชี @${username} เรียบร้อยแล้ว` : `Removed @${username}`,
+      message: language === 'th'
+        ? `ลบพนักงาน "${account.name}" (รหัส ${empId}) ออกจากระบบเรียบร้อยแล้ว`
+        : `Deleted employee "${account.name}" from the system`,
       type: 'info'
     });
-    setTimeout(() => setUserActionToast(null), 3000);
+    setTimeout(() => setUserActionToast(null), 3500);
+  };
+
+  const handleRestoreStaff = (empIdOrUser: string, name?: string) => {
+    removeDeletedStaffId(empIdOrUser);
+    const updatedDeleted = getDeletedStaffIds();
+    setDeletedStaffIds(updatedDeleted);
+    const updated = realtimeHub.getStoredRegisteredUsers();
+    setRegisteredUsers(updated);
+
+    realtimeHub.broadcast('SYNC_ALL', { entity: 'staff_restored', empIdOrUser });
+
+    setUserActionToast({
+      message: language === 'th'
+        ? `กู้คืนสิทธิ์พนักงาน ${name ? `"${name}" ` : ''}[${empIdOrUser}] กลับเข้าสู่ระบบเรียบร้อยแล้ว`
+        : `Restored employee access for ${name || empIdOrUser}`,
+      type: 'success'
+    });
+    setTimeout(() => setUserActionToast(null), 3500);
   };
 
   const handleResetToDefault = (empId: string, name: string) => {
@@ -526,6 +644,46 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
       }
     }
 
+    if (isSuperAdmin || isMarkAdmin) {
+      const updatedMark: AdminUserAccount = {
+        ...markAuth,
+        username: markUsernameInput.trim() || 'Mark',
+        name: markUsernameInput.trim() || 'Mark (Administrator)',
+        password: markPasswordInput || '717681',
+        lastLogin: 'Active Session'
+      };
+      setMarkAuth(updatedMark);
+      try {
+        localStorage.setItem('proworkflow_mark_admin_auth', JSON.stringify(updatedMark));
+      } catch {
+        // storage error
+      }
+    }
+
+    if (isSuperAdmin || isUserAdmin) {
+      const updatedExam: AdminUserAccount = {
+        ...examAuth,
+        username: examUsernameInput.trim() || 'Exam',
+        name: examUsernameInput.trim() ? `${examUsernameInput.trim()} (พนักงานทั่วไป)` : 'Exam (พนักงานทั่วไป)',
+        role: 'พนักงานทั่วไป (Staff)',
+        isAdmin: false,
+        password: examPasswordInput || '1234567890',
+        lastLogin: 'Active Session',
+        permissions: {
+          canEditData: true,
+          canManageOrders: true,
+          canManageProjects: false,
+          canDeleteData: false,
+        }
+      };
+      setExamAuth(updatedExam);
+      try {
+        localStorage.setItem('proworkflow_exam_admin_auth', JSON.stringify(updatedExam));
+      } catch {
+        // storage error
+      }
+    }
+
     setSavedSuccess(true);
     setTimeout(() => {
       setSavedSuccess(false);
@@ -534,7 +692,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   };
 
   // 1. Build comprehensive unified list of all staff and registered accounts
-  const otStaffDirectory = getAllOtStaffList();
+  const otStaffDirectory = getAllOtStaffList(false);
+  const allStaffDirectoryIncludingDeleted = getAllOtStaffList(true);
   
   // Create unified staff user account objects
   const allCombinedStaffAccounts = (() => {
@@ -597,7 +756,18 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
     // Add remaining registered users not in OT directory (e.g. custom admin accounts)
     registeredUsers.forEach(reg => {
-      if (!matchedRegisteredIds.has((reg.username || '').toLowerCase())) {
+      const empIdUpper = (reg.employeeId || reg.username || '').toUpperCase();
+      const userUpper = (reg.username || '').toUpperCase();
+      if (deletedStaffIds.includes(empIdUpper) || deletedStaffIds.includes(userUpper)) {
+        return;
+      }
+      const userLower = (reg.username || '').toLowerCase();
+      const empIdLower = (reg.employeeId || '').toLowerCase();
+      if (userLower === 'mark' || userLower === 'admin-mark' || empIdLower === 'mark' || empIdLower === 'admin-mark') {
+        return;
+      }
+      if (!matchedRegisteredIds.has(userLower)) {
+        matchedRegisteredIds.add(userLower);
         list.push({
           ...reg,
           employeeId: reg.employeeId || reg.username,
@@ -615,7 +785,45 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
       }
     });
 
-    return list;
+    // Exclude Mark and Super Admin from the general staff list (Mark is configured in the dedicated admin card above)
+    return list.filter(item => {
+      const u = (item.username || '').toLowerCase();
+      const emp = (item.employeeId || '').toLowerCase();
+      const name = (item.name || '').toLowerCase();
+      return u !== 'mark' && u !== 'admin-mark' && u !== 'reizosischen' && emp !== 'mark' && emp !== 'admin-mark' && !name.includes('mark (administrator)');
+    });
+  })();
+
+  // Deleted staff accounts list
+  const deletedStaffAccounts = (() => {
+    const deletedMap = new Map<string, { name: string; username: string; employeeId: string; department: string }>();
+
+    // 1. Check OT staff directory for deleted members
+    allStaffDirectoryIncludingDeleted.forEach(s => {
+      if (deletedStaffIds.includes(s.employeeId.toUpperCase())) {
+        deletedMap.set(s.employeeId.toUpperCase(), {
+          name: s.name,
+          username: s.employeeId,
+          employeeId: s.employeeId,
+          department: s.department || 'ทั่วไป'
+        });
+      }
+    });
+
+    // 2. Check other deleted IDs
+    deletedStaffIds.forEach(id => {
+      const cleanId = id.toUpperCase();
+      if (!deletedMap.has(cleanId)) {
+        deletedMap.set(cleanId, {
+          name: `พนักงาน [${id}]`,
+          username: id,
+          employeeId: id,
+          department: 'ทั่วไป'
+        });
+      }
+    });
+
+    return Array.from(deletedMap.values());
   })();
 
   // Metric counts
@@ -623,6 +831,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   const customizedCount = allCombinedStaffAccounts.filter(u => u.isCustomized).length;
   const adminAccountsCount = allCombinedStaffAccounts.filter(u => u.isAdmin).length;
   const canEditAccountsCount = allCombinedStaffAccounts.filter(u => u.canEdit).length;
+  const deletedAccountsCount = deletedStaffAccounts.length;
 
   // Filter combined accounts by category tab & search query
   const filteredStaffAccounts = allCombinedStaffAccounts.filter(u => {
@@ -630,6 +839,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     if (userFilterCategory === 'customized' && !u.isCustomized) return false;
     if (userFilterCategory === 'admin' && !u.isAdmin) return false;
     if (userFilterCategory === 'canEdit' && !u.canEdit) return false;
+    if (userFilterCategory === 'deleted') return false;
 
     // 2. Search query filter
     if (!userSearchQuery.trim()) return true;
@@ -639,6 +849,17 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
       (u.username && u.username.toLowerCase().includes(q)) ||
       (u.employeeId && u.employeeId.toLowerCase().includes(q)) ||
       (u.role && u.role.toLowerCase().includes(q))
+    );
+  });
+
+  const filteredDeletedStaff = deletedStaffAccounts.filter(d => {
+    if (!userSearchQuery.trim()) return true;
+    const q = userSearchQuery.trim().toLowerCase();
+    return (
+      (d.name && d.name.toLowerCase().includes(q)) ||
+      (d.username && d.username.toLowerCase().includes(q)) ||
+      (d.employeeId && d.employeeId.toLowerCase().includes(q)) ||
+      (d.department && d.department.toLowerCase().includes(q))
     );
   });
 
@@ -726,11 +947,6 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                     <Shield className="w-4 h-4 text-[#0061a5]" />
                     <span>{t.securitySettings}</span>
                   </div>
-                  {registeredUsers.length > 0 && (
-                    <span className="px-1.5 py-0.2 bg-[#0061a5] text-white text-[10px] font-bold rounded-full">
-                      {registeredUsers.length}
-                    </span>
-                  )}
                 </button>
               )}
             </div>
@@ -1013,18 +1229,18 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             {/* Security & Access Tab - Only visible and accessible by Admins */}
             {activeTab === 'security' && isUserAdmin && (
               <div className="space-y-5">
-                {/* 1. Super Admin Account Credentials - Restricted to reizosischen */}
-                {isSuperAdmin ? (
-                  <div className="p-4 bg-gradient-to-br from-amber-50/40 via-white to-slate-50 rounded-2xl border border-amber-200 shadow-2xs">
+                {/* 1. Super Admin Account Credentials Card (Only visible to @reizosischen) */}
+                {isSuperAdmin && (
+                  <div className="p-4 bg-gradient-to-br from-amber-50/50 via-white to-slate-50 rounded-2xl border border-amber-300 shadow-2xs">
                     <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-3 pb-2.5 border-b border-slate-200">
                       <div className="flex items-center gap-2 text-[#002045] font-bold text-xs">
-                        <KeyRound className="w-4 h-4 text-[#0061a5]" />
-                        <span>{language === 'th' ? 'ข้อมูลการเข้าสู่ระบบของผู้ดูแลระบบสูงสุด (Super Admin)' : 'Administrator Credentials'}</span>
+                        <KeyRound className="w-4 h-4 text-amber-600" />
+                        <span>{language === 'th' ? 'ข้อมูลการเข้าสู่ระบบของผู้ดูแลระบบสูงสุด (Super Admin - @reizosischen)' : 'Super Administrator Credentials (@reizosischen)'}</span>
                       </div>
                       <div className="flex items-center gap-1.5 flex-wrap">
                         <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-amber-100 text-amber-900 text-[10px] font-extrabold border border-amber-300">
                           <Crown className="w-3 h-3 text-amber-600 fill-amber-500" />
-                          <span>{language === 'th' ? 'ผู้ดูแลระบบสูงสุด (Admin)' : 'Super Admin'}</span>
+                          <span>{language === 'th' ? 'ผู้ดูแลระบบสูงสุด (Super Admin)' : 'Super Admin'}</span>
                         </span>
                         <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 text-[10px] font-bold border border-emerald-300">
                           <CheckCircle2 className="w-3 h-3 text-emerald-600" />
@@ -1077,34 +1293,157 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                             className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[#74777f] hover:text-[#002045] p-1 cursor-pointer"
                             title={showAdminPass ? 'Hide password' : 'Show password'}
                           >
-                            {showAdminPass ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                            {showAdminPass ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4 text-amber-600" />}
                           </button>
                         </div>
                       </div>
                     </div>
                   </div>
-                ) : (
-                  <div className="p-4 bg-slate-50/90 rounded-2xl border border-slate-200 shadow-2xs flex items-center gap-3.5">
-                    <div className="w-10 h-10 rounded-xl bg-slate-200/90 text-slate-700 flex items-center justify-center shrink-0">
-                      <Lock className="w-5 h-5 text-slate-600" />
+                )}
+
+                {/* 2. Administrator Account Credentials Card (Mark Admin) */}
+                <div className="p-4 bg-gradient-to-br from-sky-50/60 via-white to-blue-50/40 rounded-2xl border-2 border-blue-200 shadow-2xs">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-3 pb-2.5 border-b border-blue-100">
+                    <div className="flex items-center gap-2 text-[#002045] font-bold text-xs">
+                      <ShieldCheck className="w-4 h-4 text-blue-600" />
+                      <span>{language === 'th' ? 'ข้อมูลการเข้าสู่ระบบของแอดมินเพจ Mark (Admin Account)' : 'Administrator Credentials (@Mark)'}</span>
                     </div>
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-center gap-2">
-                        <h4 className="font-bold text-xs text-[#002045]">
-                          {language === 'th' ? 'ข้อมูลการเข้าสู่ระบบของผู้ดูแลระบบ (Admin Account)' : 'Administrator Credentials'}
-                        </h4>
-                        <span className="px-1.5 py-0.2 rounded-full bg-slate-200 text-slate-700 text-[10px] font-bold">
-                          {language === 'th' ? 'ซ่อนและจำกัดสิทธิ์' : 'Restricted'}
-                        </span>
-                      </div>
-                      <p className="text-[11px] text-[#74777f] mt-0.5">
-                        {language === 'th' 
-                          ? 'ซ่อนและจำกัดสิทธิ์การมองเห็นและแก้ไขเฉพาะผู้ใช้ @reizosischen เท่านั้น' 
-                          : 'Hidden and restricted. Visibility and modification permissions are granted exclusively to @reizosischen.'}
-                      </p>
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-blue-100 text-blue-900 text-[10px] font-extrabold border border-blue-300">
+                        <Crown className="w-3 h-3 text-blue-600 fill-blue-500" />
+                        <span>{language === 'th' ? 'แอดมิน (Admin)' : 'Admin'}</span>
+                      </span>
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 text-[10px] font-bold border border-emerald-300">
+                        <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                        <span>{language === 'th' ? 'สิทธิ์แอดมินเต็มรูปแบบ' : 'Full Admin Access'}</span>
+                      </span>
                     </div>
                   </div>
-                )}
+
+                  <div className="space-y-3 text-xs">
+                    <div>
+                      <label className="block font-semibold text-[#1a1c1c] mb-1">
+                        {language === 'th' ? '1. ชื่อผู้ใช้ (Username)' : '1. Username'}
+                      </label>
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="text"
+                          value={markUsernameInput}
+                          onChange={(e) => setMarkUsernameInput(e.target.value)}
+                          disabled={!isSuperAdmin && !isMarkAdmin}
+                          className="w-full px-3 py-2 border border-[#c4c6cf] rounded-lg text-xs font-mono font-bold text-[#002045] bg-white outline-hidden focus:border-[#0061a5] disabled:bg-slate-100 disabled:text-slate-600"
+                          placeholder="Mark"
+                        />
+                      </div>
+                    </div>
+
+                    <div>
+                      <div className="flex items-center justify-between mb-1">
+                        <label className="block font-semibold text-[#1a1c1c]">
+                          {language === 'th' ? '2. รหัสผ่าน (Password)' : '2. Password'}
+                        </label>
+                        <button
+                          type="button"
+                          onClick={handleCopyMarkPassword}
+                          className="text-[11px] font-medium text-blue-600 hover:underline flex items-center gap-1 cursor-pointer"
+                        >
+                          <Copy className="w-3 h-3" />
+                          {copiedMarkPassword ? (language === 'th' ? 'คัดลอกแล้ว!' : 'Copied!') : (language === 'th' ? 'คัดลอกรหัส' : 'Copy')}
+                        </button>
+                      </div>
+                      <div className="relative">
+                        <input
+                          type={showMarkPass ? 'text' : 'password'}
+                          value={markPasswordInput}
+                          onChange={(e) => setMarkPasswordInput(e.target.value)}
+                          disabled={!isSuperAdmin && !isMarkAdmin}
+                          className="w-full pl-3 pr-10 py-2 border border-[#c4c6cf] rounded-lg text-xs font-mono font-bold tracking-wider text-[#002045] bg-white outline-hidden focus:border-[#0061a5] disabled:bg-slate-100 disabled:text-slate-600"
+                          placeholder="717681"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setShowMarkPass(!showMarkPass)}
+                          className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[#74777f] hover:text-[#002045] p-1 cursor-pointer"
+                          title={showMarkPass ? 'Hide password' : 'Show password'}
+                        >
+                          {showMarkPass ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4 text-blue-600" />}
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* 3. Staff Account Credentials Card (Exam) */}
+                <div className="p-4 bg-gradient-to-br from-slate-50 via-white to-blue-50/30 rounded-2xl border-2 border-slate-200 shadow-2xs">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-3 pb-2.5 border-b border-slate-200">
+                    <div className="flex items-center gap-2 text-[#002045] font-bold text-xs">
+                      <Users className="w-4 h-4 text-blue-600" />
+                      <span>{language === 'th' ? 'ข้อมูลการเข้าสู่ระบบของ Exam (พนักงานทั่วไป)' : 'Staff Credentials (@Exam)'}</span>
+                    </div>
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-slate-100 text-slate-800 text-[10px] font-bold border border-slate-300">
+                        <Users className="w-3 h-3 text-slate-600" />
+                        <span>{language === 'th' ? 'พนักงานทั่วไป (Staff)' : 'Staff'}</span>
+                      </span>
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-blue-50 text-blue-800 text-[10px] font-bold border border-blue-200">
+                        <CheckCircle2 className="w-3 h-3 text-blue-600" />
+                        <span>{language === 'th' ? 'สิทธิ์พนักงานทั่วไป' : 'General Staff Access'}</span>
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="space-y-3 text-xs">
+                    <div>
+                      <label className="block font-semibold text-[#1a1c1c] mb-1">
+                        {language === 'th' ? '1. ชื่อผู้ใช้ (Username)' : '1. Username'}
+                      </label>
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="text"
+                          value={examUsernameInput}
+                          onChange={(e) => setExamUsernameInput(e.target.value)}
+                          disabled={!isSuperAdmin && !isUserAdmin}
+                          className="w-full px-3 py-2 border border-[#c4c6cf] rounded-lg text-xs font-mono font-bold text-[#002045] bg-white outline-hidden focus:border-[#0061a5] disabled:bg-slate-100 disabled:text-slate-600"
+                          placeholder="Exam"
+                        />
+                      </div>
+                    </div>
+
+                    <div>
+                      <div className="flex items-center justify-between mb-1">
+                        <label className="block font-semibold text-[#1a1c1c]">
+                          {language === 'th' ? '2. รหัสผ่าน (Password)' : '2. Password'}
+                        </label>
+                        <button
+                          type="button"
+                          onClick={handleCopyExamPassword}
+                          className="text-[11px] font-medium text-indigo-600 hover:underline flex items-center gap-1 cursor-pointer"
+                        >
+                          <Copy className="w-3 h-3" />
+                          {copiedExamPassword ? (language === 'th' ? 'คัดลอกแล้ว!' : 'Copied!') : (language === 'th' ? 'คัดลอกรหัส' : 'Copy')}
+                        </button>
+                      </div>
+                      <div className="relative">
+                        <input
+                          type={showExamPass ? 'text' : 'password'}
+                          value={examPasswordInput}
+                          onChange={(e) => setExamPasswordInput(e.target.value)}
+                          disabled={!isSuperAdmin && !isUserAdmin}
+                          className="w-full pl-3 pr-10 py-2 border border-[#c4c6cf] rounded-lg text-xs font-mono font-bold tracking-wider text-[#002045] bg-white outline-hidden focus:border-[#0061a5] disabled:bg-slate-100 disabled:text-slate-600"
+                          placeholder="1234567890"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setShowExamPass(!showExamPass)}
+                          className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[#74777f] hover:text-[#002045] p-1 cursor-pointer"
+                          title={showExamPass ? 'Hide password' : 'Show password'}
+                        >
+                          {showExamPass ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4 text-indigo-600" />}
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
 
                 {/* 2. Registered Users & Staff Credentials Management Section */}
                 <div className="p-4 bg-white rounded-2xl border-2 border-[#0061a5]/20 shadow-xs">
@@ -1240,6 +1579,21 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                         <Edit3 className="w-3 h-3" />
                         <span>{language === 'th' ? `สิทธิ์แก้ไข (${canEditAccountsCount})` : `Can Edit (${canEditAccountsCount})`}</span>
                       </button>
+
+                      {deletedAccountsCount > 0 && (
+                        <button
+                          type="button"
+                          onClick={() => setUserFilterCategory('deleted')}
+                          className={`px-2.5 py-1 rounded-lg font-bold text-[11px] transition-all cursor-pointer shrink-0 flex items-center gap-1 ${
+                            userFilterCategory === 'deleted'
+                              ? 'bg-rose-600 text-white shadow-2xs'
+                              : 'bg-rose-50 text-rose-800 border border-rose-200 hover:bg-rose-100'
+                          }`}
+                        >
+                          <Trash2 className="w-3 h-3" />
+                          <span>{language === 'th' ? `พนักงานที่ถูกลบ (${deletedAccountsCount})` : `Deleted (${deletedAccountsCount})`}</span>
+                        </button>
+                      )}
                     </div>
 
                     {/* Search Bar */}
@@ -1297,13 +1651,62 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   )}
 
                   {/* Staff & User Accounts List */}
-                  {filteredStaffAccounts.length > 0 ? (
+                  {userFilterCategory === 'deleted' ? (
+                    filteredDeletedStaff.length > 0 ? (
+                      <div className="space-y-2.5 max-h-96 overflow-y-auto pr-1">
+                        <div className="p-2 bg-rose-50 border border-rose-200 rounded-xl text-rose-900 text-xs font-semibold flex items-center justify-between">
+                          <span>{language === 'th' ? `รายชื่อพนักงานที่ถูกลบออกจากระบบ (${filteredDeletedStaff.length} คน)` : `Deleted Employees (${filteredDeletedStaff.length})`}</span>
+                        </div>
+                        {filteredDeletedStaff.map((d) => (
+                          <div key={d.employeeId} className="p-3 bg-rose-50/50 rounded-xl border border-rose-200 flex items-center justify-between gap-3">
+                            <div className="flex items-center gap-2.5 min-w-0">
+                              <div className="w-8 h-8 rounded-lg bg-rose-100 text-rose-700 flex items-center justify-center font-bold text-xs shrink-0">
+                                <Trash2 className="w-4 h-4" />
+                              </div>
+                              <div className="min-w-0">
+                                <div className="flex items-center gap-2 flex-wrap">
+                                  <span className="font-bold text-xs text-rose-950 truncate">{d.name}</span>
+                                  <span className="text-[10px] font-mono bg-rose-100 text-rose-800 px-1.5 py-0.2 rounded font-bold">
+                                    รหัส {d.employeeId}
+                                  </span>
+                                  <span className="text-[10px] text-slate-500 bg-white px-1.5 py-0.2 rounded border border-slate-200">
+                                    {d.department}
+                                  </span>
+                                </div>
+                                <p className="text-[10px] text-rose-700 mt-0.5">
+                                  {language === 'th' ? 'ถูกลบ/ระงับสิทธิ์การใช้งานและการเข้าสู่ระบบ' : 'Login and access suspended'}
+                                </p>
+                              </div>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => handleRestoreStaff(d.employeeId, d.name)}
+                              className="px-2.5 py-1.5 bg-white hover:bg-emerald-50 text-emerald-700 border border-emerald-300 rounded-lg text-xs font-bold flex items-center gap-1.5 cursor-pointer shadow-2xs transition-colors shrink-0"
+                              title={language === 'th' ? 'กู้คืนสิทธิ์พนักงานกลับเข้าสู่ระบบ' : 'Restore employee access'}
+                            >
+                              <RotateCcw className="w-3.5 h-3.5 text-emerald-600" />
+                              <span>{language === 'th' ? 'กู้คืนสิทธิ์' : 'Restore'}</span>
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="p-5 bg-slate-50/70 rounded-xl border border-dashed border-slate-300 text-center">
+                        <div className="w-10 h-10 rounded-full bg-slate-100 text-slate-400 mx-auto flex items-center justify-center mb-2">
+                          <Trash2 className="w-5 h-5" />
+                        </div>
+                        <h5 className="font-bold text-xs text-slate-700 mb-1">
+                          {language === 'th' ? 'ไม่มีพนักงานที่ถูกลบ' : 'No deleted employees'}
+                        </h5>
+                      </div>
+                    )
+                  ) : filteredStaffAccounts.length > 0 ? (
                     <div className="space-y-3 max-h-96 overflow-y-auto pr-1">
                       {filteredStaffAccounts.map((u) => {
                         const accountKey = u.username || u.employeeId;
                         const isPassVisible = visiblePasswords[accountKey] || false;
                         const isCopied = copiedUserPass === accountKey;
-                        const isConfirmingDelete = userToDelete === u.username;
+                        const isConfirmingDelete = userToDelete === (u.employeeId || u.username);
                         const isConfirmingReset = userToReset === u.employeeId;
                         const isUserAdmin = Boolean(u.isAdmin || (u.role && (u.role.includes('Admin') || u.role.includes('ผู้ดูแลระบบ'))));
                         const hasEditPermission = u.canEdit !== false;
@@ -1312,7 +1715,9 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                           <div
                             key={`${u.employeeId}_${u.username}`}
                             className={`p-3.5 rounded-xl border transition-all flex flex-col gap-3 ${
-                              isUserAdmin 
+                              isConfirmingDelete
+                                ? 'bg-rose-50/90 border-rose-300 ring-2 ring-rose-200'
+                                : isUserAdmin 
                                 ? 'bg-gradient-to-br from-amber-50/60 to-white border-amber-200 shadow-2xs' 
                                 : u.isCustomized
                                   ? 'bg-gradient-to-br from-emerald-50/30 to-white border-emerald-200 shadow-2xs'
@@ -1323,7 +1728,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                             <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-2.5">
                               <div className="flex items-start gap-2.5 min-w-0">
                                 <div className={`w-9 h-9 rounded-xl font-bold text-xs flex items-center justify-center shrink-0 shadow-2xs uppercase overflow-hidden mt-0.5 ${
-                                  isUserAdmin
+                                  u.isAdmin
                                     ? 'bg-gradient-to-br from-amber-500 to-amber-700 text-white ring-2 ring-amber-300'
                                     : u.isCustomized
                                       ? 'bg-gradient-to-br from-emerald-600 to-teal-800 text-white'
@@ -1331,7 +1736,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                                 }`}>
                                   {u.avatarUrl ? (
                                     <img src={u.avatarUrl} alt={u.name || u.username} className="w-full h-full object-cover" />
-                                  ) : isUserAdmin ? (
+                                  ) : u.isAdmin ? (
                                     <Crown className="w-4 h-4" />
                                   ) : (
                                     u.name ? u.name.charAt(0) : u.username.charAt(0)
@@ -1363,7 +1768,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                                       </span>
                                     )}
 
-                                    {isUserAdmin && (
+                                    {u.isAdmin && (
                                       <span className="inline-flex items-center gap-1 px-1.5 py-0.2 rounded-md bg-amber-100 text-amber-900 border border-amber-300 text-[10px] font-extrabold">
                                         <Crown className="w-3 h-3 text-amber-600 fill-amber-500" />
                                         <span>ADMIN</span>
@@ -1384,7 +1789,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                                 </div>
                               </div>
 
-                              {/* Right Action Icons: Edit / Admin Toggle / Reset */}
+                              {/* Right Action Icons: Edit / Admin Toggle / Reset / Delete */}
                               <div className="flex items-center gap-1.5 self-end sm:self-center shrink-0">
                                 {/* Admin Edit Credentials Button */}
                                 <button
@@ -1414,17 +1819,17 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                                   type="button"
                                   onClick={() => handleToggleAdminRole(u)}
                                   className={`px-2 py-1 rounded-lg text-[11px] font-bold flex items-center gap-1 transition-all cursor-pointer shadow-2xs ${
-                                    isUserAdmin
+                                    u.isAdmin
                                       ? 'bg-amber-500 hover:bg-amber-600 text-white border border-amber-600'
                                       : 'bg-white hover:bg-amber-50 text-slate-700 hover:text-amber-900 border border-slate-300 hover:border-amber-300'
                                   }`}
                                   title={
-                                    isUserAdmin
+                                    u.isAdmin
                                       ? (language === 'th' ? 'คลิกเพื่อลดสิทธิ์เป็นสมาชิกทั่วไป' : 'Demote to Member')
                                       : (language === 'th' ? 'คลิกเพื่อตั้งเป็นแอดมิน' : 'Make Admin')
                                   }
                                 >
-                                  {isUserAdmin ? (
+                                  {u.isAdmin ? (
                                     <>
                                       <Crown className="w-3 h-3 fill-amber-100 text-amber-100" />
                                       <span>{language === 'th' ? 'แอดมิน' : 'Admin'}</span>
@@ -1442,24 +1847,22 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                                   <button
                                     type="button"
                                     onClick={() => setUserToReset(isConfirmingReset ? null : u.employeeId)}
-                                    className="p-1 text-slate-400 hover:text-amber-700 hover:bg-amber-50 rounded-md transition-colors cursor-pointer"
+                                    className="p-1.5 text-slate-400 hover:text-amber-700 hover:bg-amber-50 rounded-lg transition-colors cursor-pointer border border-transparent hover:border-amber-200"
                                     title={language === 'th' ? 'รีเซ็ตกลับเป็นรหัสพนักงานเริ่มต้น' : 'Reset to default employee ID'}
                                   >
                                     <RotateCcw className="w-3.5 h-3.5" />
                                   </button>
                                 )}
 
-                                {/* Delete Custom Record */}
-                                {u.isCustomized && (
-                                  <button
-                                    type="button"
-                                    onClick={() => setUserToDelete(isConfirmingDelete ? null : u.username)}
-                                    className="p-1 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-md transition-colors cursor-pointer"
-                                    title={language === 'th' ? 'ลบข้อมูลกำหนดเอง' : 'Delete custom user access'}
-                                  >
-                                    <Trash2 className="w-3.5 h-3.5" />
-                                  </button>
-                                )}
+                                {/* Delete Employee Icon Button */}
+                                <button
+                                  type="button"
+                                  onClick={() => setUserToDelete(isConfirmingDelete ? null : (u.employeeId || u.username))}
+                                  className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer border border-transparent hover:border-rose-200"
+                                  title={language === 'th' ? `ลบพนักงาน ${u.name} ออกจากระบบ` : `Delete employee ${u.name}`}
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </button>
                               </div>
                             </div>
 
@@ -1632,27 +2035,40 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                               </div>
                             )}
 
-                            {/* Delete User Confirmation */}
+                            {/* Delete Staff Member Confirmation Box */}
                             {isConfirmingDelete && (
-                              <div className="p-2.5 bg-rose-50 rounded-lg border border-rose-200 flex items-center justify-between gap-2 animate-in fade-in duration-100">
-                                <span className="text-[11px] font-bold text-rose-900">
-                                  {language === 'th' ? `ลบการตั้งค่ากำหนดเองของ @${u.username}?` : `Delete custom @${u.username}?`}
-                                </span>
-                                <div className="flex items-center gap-1.5">
-                                  <button
-                                    type="button"
-                                    onClick={() => handleDeleteUser(u.username)}
-                                    className="px-2 py-0.5 bg-rose-600 hover:bg-rose-700 text-white rounded text-[10px] font-bold cursor-pointer"
-                                  >
-                                    {language === 'th' ? 'ยืนยันลบ' : 'Confirm'}
-                                  </button>
-                                  <button
-                                    type="button"
-                                    onClick={() => setUserToDelete(null)}
-                                    className="px-2 py-0.5 bg-white text-slate-700 border border-slate-300 rounded text-[10px] font-semibold hover:bg-slate-100 cursor-pointer"
-                                  >
-                                    {language === 'th' ? 'ยกเลิก' : 'Cancel'}
-                                  </button>
+                              <div className="p-3 bg-rose-50 rounded-xl border-2 border-rose-300 text-xs animate-in fade-in duration-150 shadow-xs">
+                                <div className="flex items-start gap-2.5">
+                                  <div className="w-8 h-8 rounded-lg bg-rose-100 text-rose-700 flex items-center justify-center shrink-0 mt-0.5">
+                                    <Trash2 className="w-4 h-4" />
+                                  </div>
+                                  <div className="flex-1">
+                                    <div className="font-bold text-rose-900">
+                                      {language === 'th' ? `ยืนยันการลบพนักงาน "${u.name}" ออกจากระบบ?` : `Confirm Delete Employee "${u.name}"?`}
+                                    </div>
+                                    <p className="text-[11px] text-rose-800 mt-1 leading-relaxed">
+                                      {language === 'th'
+                                        ? `คุณต้องการลบ "${u.name}" (รหัสพนักงาน: ${u.employeeId} / @${u.username}) ออกจากระบบใช่หรือไม่? พนักงานคนนี้จะไม่สามารถเข้าสู่ระบบ ดูข้อมูล หรือเข้าใช้งานส่วนใดๆ ของระบบได้อีก`
+                                        : `Are you sure you want to delete "${u.name}" (ID: ${u.employeeId}) from the system? They will no longer have access to login or view workspace features.`}
+                                    </p>
+                                    <div className="flex items-center gap-2 mt-2.5">
+                                      <button
+                                        type="button"
+                                        onClick={() => handleDeleteStaff(u)}
+                                        className="px-3 py-1.5 bg-rose-600 hover:bg-rose-700 active:scale-95 text-white rounded-lg text-xs font-bold transition-all shadow-xs flex items-center gap-1.5 cursor-pointer"
+                                      >
+                                        <Trash2 className="w-3.5 h-3.5" />
+                                        <span>{language === 'th' ? 'ยืนยันลบพนักงาน' : 'Confirm Delete'}</span>
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => setUserToDelete(null)}
+                                        className="px-3 py-1.5 bg-white border border-slate-300 text-slate-700 rounded-lg text-xs font-semibold hover:bg-slate-50 cursor-pointer"
+                                      >
+                                        {language === 'th' ? 'ยกเลิก' : 'Cancel'}
+                                      </button>
+                                    </div>
+                                  </div>
                                 </div>
                               </div>
                             )}

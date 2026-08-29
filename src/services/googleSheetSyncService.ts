@@ -1,4 +1,4 @@
-import { LaundryOrder, LaundryItemDetail, LaundryStage, MaintenanceTicket, OtRecord, DailyWorkSchedule, WorkScheduleStatus } from '../types';
+import { LaundryOrder, LaundryItemDetail, LaundryStage, MaintenanceTicket, OtRecord, DailyWorkSchedule, WorkScheduleStatus, MeetingRoomBooking, MeetingStatus } from '../types';
 import { realtimeHub } from './realtimeService';
 import { INITIAL_RAGS_GLOVES_DATA } from '../data/mockRagsGlovesData';
 
@@ -1991,5 +1991,263 @@ export async function fetchGoogleSheetWorkSchedule(): Promise<{
 
   return inFlightSchedulePromise;
 }
+
+// ==========================================
+// MEETING ROOM BOOKING (จองห้องประชุม) GOOGLE SHEET INTEGRATION
+// ==========================================
+export const MEETING_ROOM_SHEET_URL = 'https://docs.google.com/spreadsheets/d/1SHDNqj6e-n1jmMfSl4UV5f6d6sCs_HZv_X00AlP8njA/edit?gid=860478872#gid=860478872';
+export const MEETING_ROOM_SHEET_CSV_URL = 'https://docs.google.com/spreadsheets/d/1SHDNqj6e-n1jmMfSl4UV5f6d6sCs_HZv_X00AlP8njA/export?format=csv&gid=860478872';
+
+export const FALLBACK_MEETING_ROOM_CSV = `ประทับเวลา,เลือกห้องประชุม,วันที่,เวลาที่เริ่ม,เวลาสิ้นสุด,เรื่องที่ประชุม/อบรม,แผนก/ฝ่าย,จำนวน (คน),เบอร์โทร
+"24/8/2026, 15:17:57",TPM 1,3/8/2026,10:30:00,11:30:00,ประชุมแผนกธุรการลาดกระบัง 2,ทรัพยากรบุคคล,9,4510
+"24/8/2026, 15:19:34",TPM 1,11/8/2026,8:00:00,12:00:00,อบรม ความรู้ 7 ส.,ทรัพยากรบุคคล,30,6133
+"24/8/2026, 15:21:20",TPM 1,11/8/2026,13:30:00,18:30:00,ประชุมสุ่มตรวจไลน์ผลิต,RD & QC,2,6102
+"24/8/2026, 15:22:38",TPM 1,14/8/2026,8:00:00,12:00:00,อบรม ทบทวน คปอ.,ทรัพยากรบุคคล,50,6133
+"24/8/2026, 15:23:30",TPM 1,14/8/2026,13:00:00,14:00:00,อบรมผู้รับเหมา,บำรุงรักษาอาคาร และงานระบบ,16,5270
+"24/8/2026, 15:24:28",TPM 1,17/8/2026,7:30:00,16:30:00,ปฐมนิเทศพนักงานใหม่,ทรัพยากรบุคคล,20,5621
+"24/8/2026, 15:25:44",TPM 1,18/8/2026,9:00:00,10:00:00,อบรมผู้รับเหมา,บำรุงรักษาอาคาร และงานระบบ,20,5272
+"24/8/2026, 15:26:41",TPM 1,18/8/2026,13:00:00,16:30:00,Pre-meeting ระบบคุณภาพ,RD & QC,10,6138
+"24/8/2026, 15:27:42",TPM 1,20/8/2026,9:00:00,12:00:00,ประชุมกับSupplier,ผลิตลาดกระบัง 2,15,4262
+"24/8/2026, 15:28:27",TPM 1,24/8/2026,9:00:00,12:00:00,ประชุม DOR,ผลิตลาดกระบัง 2,25,4262
+"24/8/2026, 15:29:09",TPM 1,26/8/2026,8:00:00,12:00:00,อบรม การทบทวนระบบคุณภาพฯ,ทรัพยากรบุคคล,40,6133
+"24/8/2026, 15:29:56",TPM 1,27/8/2026,8:00:00,12:00:00,อบรม ระบบคุณภาพ,ทรัพยากรบุคคล,30,6133
+"24/8/2026, 15:30:51",TPM 2,3/8/2026,10:00:00,12:30:00,ติดตามงาน Chiller Plant,วิศวกรรม,7,5743
+"24/8/2026, 15:32:08",TPM 2,4/8/2026,13:30:00,19:30:00,ประชุมสุ่มตรวจไลน์ผลิต,RD & QC,2,6102
+"24/8/2026, 15:33:04",TPM 2,6/8/2026,8:30:00,11:30:00,อบรมระบบระบายอากาศ,บำรุงรักษาอาคาร และงานระบบ,8,4611
+"24/8/2026, 15:34:01",TPM 2,6/8/2026,13:00:00,16:00:00,QR Code,ผลิตลาดกระบัง 2,10,4264
+"24/8/2026, 15:35:56",TPM 2,7/8/2026,13:00:00,16:00:00,อบรมการพัฒนาอย่างยั่งยืน,ผลิตลาดกระบัง 2,2,4262
+"24/8/2026, 15:36:59",TPM 2,11/8/2026,13:30:00,15:00:00,ประชุมย่อยคณะสวัสดิการ,ทรัพยากรบุคคล,6,4510
+"24/8/2026, 15:38:03",TPM 2,20/8/2026,8:00:00,13:00:00,ทรัพยากรบุคคล,ทรัพยากรบุคคล,12,6131
+"24/8/2026, 15:39:04",TPM 2,21/8/2026,8:00:00,12:00:00,สัมภาษณ์พนักงาน,ทรัพยากรบุคคล,5,4510
+"24/8/2026, 15:39:59",TPM 2,21/8/2026,13:30:00,16:00:00,Foodqualityandsafetyculture,RD & QC,10,6138
+"24/8/2026, 15:40:54",TPM 2,22/8/2026,10:00:00,17:00:00,ประชุมสุ่มตรวจไลน์ผลิต,RD & QC,2,6102
+"24/8/2026, 15:42:11",TPM 2,24/8/2026,10:00:00,12:00:00,ติดตามงานชิลเลอร์แพลนท์,วิศวกรรม,7,5743
+"24/8/2026, 15:43:13",TPM 2,28/8/2026,9:00:00,12:00:00,ประชุมคปอ,บำรุงรักษาอาคาร และงานระบบ,15,5272
+"24/8/2026, 16:58:37",TPM 1,28/8/2026,9:00:00,12:00:00,อบรม OJT,บำรุงรักษาอาคารและงานระบบ,10,4632
+"26/8/2026, 11:36:59",TPM 1,2/9/2026,9:30:00,12:00:00,ประชุมซ้อมแผนอพยพหนีไฟ,บำรุงรักษาอาคาร และงานระบบ,30,1201
+"26/8/2026, 11:38:12",TPM 1,15/9/2026,8:00:00,12:00:00,อบรมโรคจากการทำงาน,ทรัพยากรบุคคล,50,6133
+"26/8/2026, 11:39:59",TPM 1,22/8/2026,8:00:00,12:00:00,อบรมสิทธิมนุษยชน,ทรัพยากรบุคคล,50,6133
+"26/8/2026, 11:42:20",TPM 1,23/9/2026,8:00:00,12:00:00,อบรมการทบทวนระบบคุณภาพ,ทรัพยากรบุคคล,40,6133
+"26/8/2026, 11:44:20",TPM 1,25/9/2026,8:00:00,12:00:00,อบรมระบบคุณภาพ,ทรัพยากรบุคคล,30,6133
+"26/8/2026, 11:46:45",TPM 2,7/9/2026,10:00:00,12:00:00,ติดตามงาน chiller plan,วิศวกรรม,8,5743
+"26/8/2026, 11:51:31",TPM 2,3/9/2026,10:30:00,12:00:00,ประชุมแผนก,ทรัพยากรบุคคล,10,4510
+"27/8/2026, 12:45:24",TPM 1,28/10/2026,13:00:00,17:00:00,เตรียมสถานที่ตรวจสุขภาพประจำปี,ทรัพยากรบุคคล,2,5632
+"27/8/2026, 12:46:35",TPM 1,29/10/2026,7:00:00,17:00:00,ตรวจสุขภาพประจำปี,ทรัพยากรบุคคล,2,5632
+"27/8/2026, 12:47:27",TPM 2,28/10/2026,13:00:00,17:00:00,เตรียมสถานที่ตรวจสุขภาพประจำปี,ทรัพยากรบุคคล,2,5632
+"27/8/2026, 12:48:23",TPM 2,29/10/2026,7:00:00,17:00:00,ตรวจสุขภาพประจำปี,ทรัพยากรบุคคล,2,5632
+"27/8/2026, 13:41:06",TPM 1,17/9/2026,9:00:00,12:00:00,ประชุม DOR,ผลิตลาดกระบัง 2,25,4262
+"29/8/2026, 11:20:37",TPM 1,8/9/2026,13:00:00,16:00:00,กิจกรรมอนุรักษ์พลังงาน,วิศวกรรม,30,4742
+"29/8/2026, 11:22:51",TPM 2,1/9/2026,7:00:00,13:00:00,RD ทดลอง,RD & QC,2,6102
+"29/8/2026, 11:26:34",TPM 2,3/9/2026,13:00:00,16:00:00,ปัญหาเชื้อไลน์ Frozen,ผลิตลาดกระบัง 2,15,4241
+"29/8/2026, 11:29:04",TPM 1,15/10/2026,13:00:00,17:00:00,เตรียมพื้นที่ทำลายเอกสาร,ทรัพยากรบุคคล,35,6020
+"29/8/2026, 11:37:42",TPM 1,16/10/2026,8:00:00,16:30:00,ทำลายเอกสารประจำปี 2569,ทรัพยากรบุคคล,35,6020
+"29/8/2026, 11:42:25",TPM 2,16/10/2026,8:00:00,16:30:00,ทำลายเอกสารประจำปี 2569,ทรัพยากรบุคคล,35,6020`;
+
+// Helper to calculate meeting status
+export function calculateMeetingStatus(bookingDateStr: string, startTimeStr: string, endTimeStr: string): MeetingStatus {
+  try {
+    const parts = (bookingDateStr || '').trim().split(/[-/.]/);
+    if (parts.length < 3) return 'นัดหมายล่วงหน้า';
+
+    const day = parseInt(parts[0], 10);
+    const month = parseInt(parts[1], 10) - 1;
+    let year = parseInt(parts[2], 10);
+    if (year > 2500) year -= 543;
+    if (year < 100) year += 2000;
+
+    const startParts = (startTimeStr || '').trim().split(':');
+    const startHour = parseInt(startParts[0], 10) || 0;
+    const startMin = parseInt(startParts[1], 10) || 0;
+
+    const endParts = (endTimeStr || '').trim().split(':');
+    const endHour = parseInt(endParts[0], 10) || 23;
+    const endMin = parseInt(endParts[1], 10) || 59;
+
+    const startDate = new Date(year, month, day, startHour, startMin);
+    const endDate = new Date(year, month, day, endHour, endMin);
+    const now = new Date();
+
+    if (now > endDate) {
+      return 'เสร็จสิ้นแล้ว';
+    }
+
+    // Check if it is today
+    const isSameDay =
+      now.getFullYear() === year &&
+      now.getMonth() === month &&
+      now.getDate() === day;
+
+    if (isSameDay) {
+      if (now >= startDate && now <= endDate) {
+        return 'กำลังประชุม';
+      }
+      if (now < startDate) {
+        return 'รอเริ่มวันนี้';
+      }
+    }
+
+    if (now < startDate) {
+      return 'นัดหมายล่วงหน้า';
+    }
+
+    return 'เสร็จสิ้นแล้ว';
+  } catch {
+    return 'นัดหมายล่วงหน้า';
+  }
+}
+
+// Convert CSV lines into structured MeetingRoomBooking list
+export function convertSheetRowsToMeetingRoomBookings(csvText: string): MeetingRoomBooking[] {
+  const lines = parseCSV(csvText);
+  if (lines.length <= 1) return [];
+
+  // Filter out header
+  const dataRows = lines.filter((row, idx) => {
+    if (idx === 0) return false;
+    return row.some(cell => cell && cell.trim().length > 0);
+  });
+
+  const bookings: MeetingRoomBooking[] = dataRows.map((row, idx) => {
+    const timestamp = (row[0] || '').trim();
+    const room = (row[1] || '').trim() || 'TPM 1';
+    const bookingDate = (row[2] || '').trim();
+    const rawStartTime = (row[3] || '').trim();
+    const rawEndTime = (row[4] || '').trim();
+    const subject = (row[5] || '').trim() || 'การประชุม/อบรม';
+    const department = (row[6] || '').trim() || 'ทั่วไป';
+    const rawAttendees = (row[7] || '').trim();
+    const phoneNumber = (row[8] || '').trim();
+
+    // Clean times from 10:30:00 -> 10:30
+    const cleanTime = (t: string) => {
+      if (!t) return '';
+      const parts = t.split(':');
+      if (parts.length >= 2) {
+        return `${parts[0].padStart(2, '0')}:${parts[1].padStart(2, '0')}`;
+      }
+      return t;
+    };
+
+    const startTime = cleanTime(rawStartTime);
+    const endTime = cleanTime(rawEndTime);
+    const attendeesCount = parseInt(rawAttendees, 10) || 1;
+    const status = calculateMeetingStatus(bookingDate, startTime, endTime);
+
+    return {
+      id: `mtg-${idx + 1}-${Date.now().toString(36)}`,
+      seq: idx + 1,
+      timestamp,
+      room,
+      bookingDate,
+      startTime: startTime || '08:00',
+      endTime: endTime || '12:00',
+      subject,
+      department,
+      attendeesCount,
+      phoneNumber,
+      status,
+    };
+  });
+
+  return bookings;
+}
+
+let inFlightMeetingRoomPromise: Promise<{
+  success: boolean;
+  bookings: MeetingRoomBooking[];
+  rawRowsCount: number;
+  lastSyncedAt: Date;
+  error?: string;
+}> | null = null;
+
+export async function fetchGoogleSheetMeetingRoomBookings(): Promise<{
+  success: boolean;
+  bookings: MeetingRoomBooking[];
+  rawRowsCount: number;
+  lastSyncedAt: Date;
+  error?: string;
+}> {
+  if (inFlightMeetingRoomPromise) {
+    return inFlightMeetingRoomPromise;
+  }
+
+  const executeFetch = async () => {
+    const candidateUrls = [
+      // 1. Server proxy
+      '/api/sheet-csv?sheetId=1SHDNqj6e-n1jmMfSl4UV5f6d6sCs_HZv_X00AlP8njA&gid=860478872',
+      // 2. Direct CSV export
+      MEETING_ROOM_SHEET_CSV_URL,
+      // 3. GViz CSV export
+      'https://docs.google.com/spreadsheets/d/1SHDNqj6e-n1jmMfSl4UV5f6d6sCs_HZv_X00AlP8njA/gviz/tq?tqx=out:csv&gid=860478872',
+    ];
+
+    let csvText: string | null = null;
+
+    for (const url of candidateUrls) {
+      try {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 6000);
+
+        const response = await fetch(url, {
+          method: 'GET',
+          headers: {
+            'Accept': 'text/csv, text/plain, */*',
+          },
+          cache: 'no-cache',
+          signal: controller.signal,
+        });
+
+        clearTimeout(timeoutId);
+
+        if (response.ok) {
+          const text = await response.text();
+          if (text && (text.includes('ห้องประชุม') || text.includes('TPM') || text.includes('เรื่องที่ประชุม')) && text.length > 50) {
+            csvText = text;
+            try {
+              if (typeof window !== 'undefined') {
+                localStorage.setItem('proworkflow_meeting_room_csv_cache_v1', text);
+              }
+            } catch {
+              // ignore
+            }
+            break;
+          }
+        }
+      } catch {
+        // Continue to next candidate endpoint
+      }
+    }
+
+    if (!csvText) {
+      try {
+        if (typeof window !== 'undefined') {
+          const cached = localStorage.getItem('proworkflow_meeting_room_csv_cache_v1');
+          if (cached && cached.includes('TPM')) {
+            csvText = cached;
+          }
+        }
+      } catch {
+        // ignore
+      }
+    }
+
+    const finalText = csvText || FALLBACK_MEETING_ROOM_CSV;
+    const bookings = convertSheetRowsToMeetingRoomBookings(finalText);
+
+    return {
+      success: true,
+      bookings,
+      rawRowsCount: bookings.length,
+      lastSyncedAt: new Date(),
+    };
+  };
+
+  inFlightMeetingRoomPromise = executeFetch().finally(() => {
+    inFlightMeetingRoomPromise = null;
+  });
+
+  return inFlightMeetingRoomPromise;
+}
+
 
 

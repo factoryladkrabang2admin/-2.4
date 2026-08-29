@@ -144,6 +144,23 @@ export const MARK_ADMIN_USER: AdminUserAccount = {
   }
 };
 
+export const EXAM_USER: AdminUserAccount = {
+  username: 'Exam',
+  name: 'Exam (พนักงานทั่วไป)',
+  email: 'exam@proworkflow.com',
+  role: 'พนักงานทั่วไป (Staff)',
+  password: '1234567890',
+  lastLogin: 'Active Session',
+  isAdmin: false,
+  canEdit: true,
+  permissions: {
+    canEditData: true,
+    canManageOrders: true,
+    canManageProjects: false,
+    canDeleteData: false,
+  }
+};
+
 export const DEFAULT_GUEST_USER: AdminUserAccount = {
   username: 'guest',
   name: 'พนักงานทั่วไป (Staff)',
@@ -206,8 +223,52 @@ export const INITIAL_OT_STAFF_EMPLOYEES: StaffEmployeeInfo[] = [
   { employeeId: '720592', name: 'พงศกร พิกุลทอง', department: 'ธุรการ' },
 ];
 
-export function getAllOtStaffList(): StaffEmployeeInfo[] {
+export const DELETED_STAFF_STORAGE_KEY = 'proworkflow_deleted_staff_ids_v1';
+
+export function getDeletedStaffIds(): string[] {
+  try {
+    const raw = localStorage.getItem(DELETED_STAFF_STORAGE_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) {
+        return parsed.map((id: string) => String(id).toUpperCase().trim());
+      }
+    }
+  } catch {
+    // ignore
+  }
+  return [];
+}
+
+export function addDeletedStaffId(id: string): void {
+  try {
+    const cleanId = String(id).toUpperCase().trim();
+    if (!cleanId) return;
+    const current = getDeletedStaffIds();
+    if (!current.includes(cleanId)) {
+      const updated = [...current, cleanId];
+      localStorage.setItem(DELETED_STAFF_STORAGE_KEY, JSON.stringify(updated));
+    }
+  } catch {
+    // ignore
+  }
+}
+
+export function removeDeletedStaffId(id: string): void {
+  try {
+    const cleanId = String(id).toUpperCase().trim();
+    if (!cleanId) return;
+    const current = getDeletedStaffIds();
+    const updated = current.filter(item => item !== cleanId);
+    localStorage.setItem(DELETED_STAFF_STORAGE_KEY, JSON.stringify(updated));
+  } catch {
+    // ignore
+  }
+}
+
+export function getAllOtStaffList(includeDeleted: boolean = false): StaffEmployeeInfo[] {
   const staffMap = new Map<string, StaffEmployeeInfo>();
+  const deletedIds = new Set(getDeletedStaffIds());
 
   // 1. Initial known OT staff from spreadsheet
   INITIAL_OT_STAFF_EMPLOYEES.forEach((emp) => {
@@ -236,7 +297,9 @@ export function getAllOtStaffList(): StaffEmployeeInfo[] {
     // ignore
   }
 
-  return Array.from(staffMap.values());
+  const allList = Array.from(staffMap.values());
+  if (includeDeleted) return allList;
+  return allList.filter(s => !deletedIds.has(s.employeeId.toUpperCase()));
 }
 
 export function saveUpdatedUserCredentials(updatedUser: AdminUserAccount): void {
@@ -246,6 +309,16 @@ export function saveUpdatedUserCredentials(updatedUser: AdminUserAccount): void 
     if (updatedUser.username.toLowerCase() === 'reizosischen') {
       localStorage.setItem('proworkflow_admin_auth', JSON.stringify(updatedUser));
       realtimeHub.broadcast('SYNC_ALL', { entity: 'admin_auth', user: updatedUser });
+      return;
+    }
+    if (updatedUser.username.toLowerCase() === 'mark') {
+      localStorage.setItem('proworkflow_mark_admin_auth', JSON.stringify(updatedUser));
+      realtimeHub.broadcast('SYNC_ALL', { entity: 'mark_admin_auth', user: updatedUser });
+      return;
+    }
+    if (updatedUser.username.toLowerCase() === 'exam') {
+      localStorage.setItem('proworkflow_exam_admin_auth', JSON.stringify(updatedUser));
+      realtimeHub.broadcast('SYNC_ALL', { entity: 'exam_admin_auth', user: updatedUser });
       return;
     }
 
@@ -323,13 +396,43 @@ export function authenticateStaffOrAdmin(
   }
 
   // 2. Mark Admin
-  const isMarkMatch = cleanInputUser === 'mark';
+  let markAdmin = MARK_ADMIN_USER;
+  try {
+    const savedMark = localStorage.getItem('proworkflow_mark_admin_auth');
+    if (savedMark) markAdmin = JSON.parse(savedMark);
+  } catch {}
+
+  const markUsername = (markAdmin.username || 'mark').toLowerCase().replace(/^@/, '').trim();
+  const isMarkMatch = cleanInputUser === 'mark' || cleanInputUser === markUsername;
   if (isMarkMatch) {
-    const isMarkPassOk = pass === '717681' || pass === (MARK_ADMIN_USER.password || '717681');
+    const isMarkPassOk = pass === '717681' || pass === (markAdmin.password || '717681');
     if (isMarkPassOk) {
-      return { success: true, user: MARK_ADMIN_USER };
+      return { success: true, user: markAdmin };
     }
     return { success: false, error: 'INCORRECT_PASSWORD' };
+  }
+
+  // 3. Exam Admin
+  let examAdmin = EXAM_USER;
+  try {
+    const savedExam = localStorage.getItem('proworkflow_exam_admin_auth');
+    if (savedExam) examAdmin = JSON.parse(savedExam);
+  } catch {}
+
+  const examUsername = (examAdmin.username || 'exam').toLowerCase().replace(/^@/, '').trim();
+  const isExamMatch = cleanInputUser === 'exam' || cleanInputUser === examUsername;
+  if (isExamMatch) {
+    const isExamPassOk = pass === '1234567890' || pass === (examAdmin.password || '1234567890');
+    if (isExamPassOk) {
+      return { success: true, user: examAdmin };
+    }
+    return { success: false, error: 'INCORRECT_PASSWORD' };
+  }
+
+  // Check if this account has been deleted by admin
+  const deletedIds = new Set(getDeletedStaffIds());
+  if (deletedIds.has(cleanInputUser.toUpperCase())) {
+    return { success: false, error: 'USER_NOT_FOUND' };
   }
 
   // 3. Check customized stored user accounts (e.g. employee who changed password or username)
@@ -346,7 +449,14 @@ export function authenticateStaffOrAdmin(
     const uUser = (u.username || '').toLowerCase().replace(/^@/, '').trim();
     const uEmpId = (u.employeeId || '').toLowerCase().trim();
     const uName = (u.name || '').toLowerCase().trim();
-    return uUser === cleanInputUser || (uEmpId && uEmpId === cleanInputUser) || (uName && uName === cleanInputUser);
+    const isMatched = uUser === cleanInputUser || (uEmpId && uEmpId === cleanInputUser) || (uName && uName === cleanInputUser);
+    if (isMatched) {
+      if ((u.employeeId && deletedIds.has(u.employeeId.toUpperCase())) || (u.username && deletedIds.has(u.username.toUpperCase()))) {
+        return false;
+      }
+      return true;
+    }
+    return false;
   });
 
   if (matchedCustomUser) {

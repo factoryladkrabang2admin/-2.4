@@ -18,7 +18,10 @@ import { LaundryView } from './components/LaundryView';
 import { MaintenanceView } from './components/MaintenanceView';
 import { WorkScheduleView } from './components/WorkScheduleView';
 import { OtView } from './components/OtView';
+import { PayslipView } from './components/PayslipView';
+import { MeetingRoomView } from './components/MeetingRoomView';
 import { RagsGlovesLogView } from './components/RagsGlovesLogView';
+import { RestrictedAccessView } from './components/RestrictedAccessView';
 import { InviteMemberModal } from './components/InviteMemberModal';
 import { LaundryDetailModal } from './components/LaundryDetailModal';
 import { CreateLaundryModal } from './components/CreateLaundryModal';
@@ -32,8 +35,8 @@ import { realtimeHub, RealtimeMessage } from './services/realtimeService';
 import { fetchGoogleSheetLaundryOrders, fetchGoogleSheetMaintenanceTickets, fetchGoogleSheetOtRecords, GOOGLE_SHEET_URL } from './services/googleSheetSyncService';
 
 export default function App() {
-  // Main State
-  const [currentTab, setCurrentTab] = useState<NavigationTab>('dashboard');
+  // Main State: default to 'laundry' for guest users so they land directly on public content
+  const [currentTab, setCurrentTab] = useState<NavigationTab>('laundry');
   const [laundrySubTab, setLaundrySubTab] = useState<'pipeline' | 'rags_gloves' | 'analytics'>('pipeline');
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
@@ -80,6 +83,7 @@ export default function App() {
       // storage
     }
     setLoginModalOpen(false);
+    setCurrentTab('laundry');
   };
 
   const handleUpdateCurrentUser = (updated: AdminUserAccount) => {
@@ -642,30 +646,48 @@ export default function App() {
         {/* Scrollable Main Canvas */}
         <main className="flex-1 mt-16 p-4 sm:p-6 lg:p-8 max-w-[1440px] mx-auto w-full">
           {currentTab === 'dashboard' && (
-            <DashboardView
-              activities={activities}
-              notifications={notifications}
-              laundryOrders={laundryOrders}
-              maintenanceTickets={maintenanceTickets}
-              onCreateLaundryOrder={() => setCreateLaundryModalOpen(true)}
-              onNavigateToLaundry={() => {
-                setLaundrySubTab('pipeline');
-                setCurrentTab('laundry');
-              }}
-              onNavigateToRagsGloves={() => {
-                setLaundrySubTab('rags_gloves');
-                setCurrentTab('laundry');
-              }}
-              onNavigateToMaintenance={() => setCurrentTab('maintenance')}
-              onNavigateToReports={() => setCurrentTab('reports')}
-              onOpenNotifications={() => setNotificationsOpen(true)}
-              onSelectNotificationOrder={handleSelectNotificationOrder}
-              onSelectNotificationMaintenance={handleSelectNotificationMaintenance}
-            />
+            isAuthenticated ? (
+              <DashboardView
+                laundryOrders={laundryOrders}
+                onCreateLaundryOrder={() => setCreateLaundryModalOpen(true)}
+                onNavigateToLaundry={() => {
+                  setLaundrySubTab('pipeline');
+                  setCurrentTab('laundry');
+                }}
+                onNavigateToRagsGloves={() => {
+                  setLaundrySubTab('rags_gloves');
+                  setCurrentTab('laundry');
+                }}
+                onNavigateToMeetingRoom={() => setCurrentTab('meeting_room')}
+                onNavigateToReports={() => setCurrentTab('reports')}
+              />
+            ) : (
+              <RestrictedAccessView
+                currentTab="dashboard"
+                onOpenLogin={() => setLoginModalOpen(true)}
+                onNavigateToLaundry={() => {
+                  setLaundrySubTab('pipeline');
+                  setCurrentTab('laundry');
+                }}
+                onNavigateToMeetingRoom={() => setCurrentTab('meeting_room')}
+              />
+            )
           )}
 
           {currentTab === 'reports' && (
-            <ReportsView />
+            isAuthenticated ? (
+              <ReportsView />
+            ) : (
+              <RestrictedAccessView
+                currentTab="reports"
+                onOpenLogin={() => setLoginModalOpen(true)}
+                onNavigateToLaundry={() => {
+                  setLaundrySubTab('pipeline');
+                  setCurrentTab('laundry');
+                }}
+                onNavigateToMeetingRoom={() => setCurrentTab('meeting_room')}
+              />
+            )
           )}
 
           {currentTab === 'rags_gloves' && (
@@ -687,29 +709,91 @@ export default function App() {
             />
           )}
 
-          {currentTab === 'maintenance' && (
-            <MaintenanceView
+          {currentTab === 'meeting_room' && (
+            <MeetingRoomView
               currentUser={currentUser}
               isAuthenticated={isAuthenticated}
-              externalTickets={maintenanceTickets}
-              highlightWorkOrderNo={selectedMaintenanceWorkOrder}
-              onClearHighlight={() => setSelectedMaintenanceWorkOrder(null)}
             />
+          )}
+
+          {currentTab === 'maintenance' && (
+            isAuthenticated ? (
+              <MaintenanceView
+                currentUser={currentUser}
+                isAuthenticated={isAuthenticated}
+                externalTickets={maintenanceTickets}
+                highlightWorkOrderNo={selectedMaintenanceWorkOrder}
+                onClearHighlight={() => setSelectedMaintenanceWorkOrder(null)}
+              />
+            ) : (
+              <RestrictedAccessView
+                currentTab="maintenance"
+                onOpenLogin={() => setLoginModalOpen(true)}
+                onNavigateToLaundry={() => {
+                  setLaundrySubTab('pipeline');
+                  setCurrentTab('laundry');
+                }}
+                onNavigateToMeetingRoom={() => setCurrentTab('meeting_room')}
+              />
+            )
           )}
 
           {currentTab === 'schedule' && (
-            <WorkScheduleView
-              currentUser={currentUser}
-              isAuthenticated={isAuthenticated}
-            />
+            isAuthenticated ? (
+              <WorkScheduleView
+                currentUser={currentUser}
+                isAuthenticated={isAuthenticated}
+              />
+            ) : (
+              <RestrictedAccessView
+                currentTab="schedule"
+                onOpenLogin={() => setLoginModalOpen(true)}
+                onNavigateToLaundry={() => {
+                  setLaundrySubTab('pipeline');
+                  setCurrentTab('laundry');
+                }}
+                onNavigateToMeetingRoom={() => setCurrentTab('meeting_room')}
+              />
+            )
           )}
 
           {currentTab === 'ot' && (
-            <OtView
-              currentUser={currentUser}
-              isAuthenticated={isAuthenticated}
-              onOpenLogin={() => setLoginModalOpen(true)}
-            />
+            isAuthenticated ? (
+              <OtView
+                currentUser={currentUser}
+                isAuthenticated={isAuthenticated}
+                onOpenLogin={() => setLoginModalOpen(true)}
+              />
+            ) : (
+              <RestrictedAccessView
+                currentTab="ot"
+                onOpenLogin={() => setLoginModalOpen(true)}
+                onNavigateToLaundry={() => {
+                  setLaundrySubTab('pipeline');
+                  setCurrentTab('laundry');
+                }}
+                onNavigateToMeetingRoom={() => setCurrentTab('meeting_room')}
+              />
+            )
+          )}
+
+          {currentTab === 'payslip' && (
+            isAuthenticated ? (
+              <PayslipView
+                currentUser={currentUser}
+                isAuthenticated={isAuthenticated}
+              />
+            ) : (
+              <RestrictedAccessView
+                currentTab="ot"
+                onOpenLogin={() => setLoginModalOpen(true)}
+                onNavigateToLaundry={() => {
+                  setLaundrySubTab('pipeline');
+                  setCurrentTab('laundry');
+                }}
+                onNavigateToMeetingRoom={() => setCurrentTab('meeting_room')}
+              />
+            )
           )}
 
           {currentTab === 'laundry' && (

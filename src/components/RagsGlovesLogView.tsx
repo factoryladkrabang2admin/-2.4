@@ -580,16 +580,18 @@ export const RagsGlovesLogView: React.FC<RagsGlovesLogViewProps> = ({
               <Printer className="w-4 h-4" />
             </button>
 
-            {/* QR CODE Icon-Only Button */}
-            <button
-              type="button"
-              onClick={() => setQrModalOpen(true)}
-              className="p-2.5 bg-white/15 hover:bg-white/25 active:bg-white/30 text-white border border-white/20 rounded-xl transition-all cursor-pointer hover:scale-105 active:scale-95 shadow-xs flex items-center justify-center"
-              title={language === 'th' ? 'QR Code แบบฟอร์มบันทึกข้อมูล' : 'QR Code Form Entry'}
-              aria-label={language === 'th' ? 'QR Code แบบฟอร์มบันทึกข้อมูล' : 'QR Code Form Entry'}
-            >
-              <QrCode className="w-4 h-4 text-emerald-100" />
-            </button>
+            {/* QR CODE Icon-Only Button (Admin / Supervisor Only) */}
+            {isAdmin && (
+              <button
+                type="button"
+                onClick={() => setQrModalOpen(true)}
+                className="p-2.5 bg-white/15 hover:bg-white/25 active:bg-white/30 text-white border border-white/20 rounded-xl transition-all cursor-pointer hover:scale-105 active:scale-95 shadow-xs flex items-center justify-center"
+                title={language === 'th' ? 'QR Code แบบฟอร์มบันทึกข้อมูล (เฉพาะผู้ดูแล/แอดมิน)' : 'QR Code Form Entry (Admin Only)'}
+                aria-label={language === 'th' ? 'QR Code แบบฟอร์มบันทึกข้อมูล' : 'QR Code Form Entry'}
+              >
+                <QrCode className="w-4 h-4 text-emerald-100" />
+              </button>
+            )}
           </div>
         </div>
       </div>
@@ -1394,8 +1396,8 @@ export const RagsGlovesLogView: React.FC<RagsGlovesLogViewProps> = ({
         </div>
       )}
 
-      {/* QR Code Google Form Modal - Styled exactly like LaundryView QR Code Modal */}
-      {qrModalOpen && (
+      {/* QR Code Google Form Modal (Admin / Supervisor Only) */}
+      {qrModalOpen && isAdmin && (
         <div 
           className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in duration-200"
           onClick={() => setQrModalOpen(false)}

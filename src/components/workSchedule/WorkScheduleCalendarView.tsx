@@ -39,20 +39,11 @@ export const WorkScheduleCalendarView: React.FC<WorkScheduleCalendarViewProps> =
     return map;
   }, [schedules]);
 
-  // Determine available year and month from data, default to first schedule month or current month
+  // Determine available year and month, default to current date / current month
   const initialYearMonth = useMemo(() => {
-    if (schedules.length > 0) {
-      const parts = schedules[0].dateStr.split('/');
-      if (parts.length === 3) {
-        return {
-          year: parseInt(parts[2], 10) || 2026,
-          month: (parseInt(parts[1], 10) - 1) || 7 // 0-indexed (7 = Aug)
-        };
-      }
-    }
     const now = new Date();
     return { year: now.getFullYear(), month: now.getMonth() };
-  }, [schedules]);
+  }, []);
 
   const [currentYear, setCurrentYear] = useState<number>(initialYearMonth.year);
   const [currentMonth, setCurrentMonth] = useState<number>(initialYearMonth.month);
@@ -225,6 +216,11 @@ export const WorkScheduleCalendarView: React.FC<WorkScheduleCalendarViewProps> =
         {calendarDays.map((cell, idx) => {
           const schedule = cell.schedule;
           const hasData = Boolean(schedule);
+          const today = new Date();
+          const isToday = cell.isCurrentMonth && 
+            cell.dayNumber === today.getDate() && 
+            currentMonth === today.getMonth() && 
+            currentYear === today.getFullYear();
 
           return (
             <div
@@ -235,6 +231,8 @@ export const WorkScheduleCalendarView: React.FC<WorkScheduleCalendarViewProps> =
               className={`min-h-[110px] sm:min-h-[135px] rounded-2xl p-2 sm:p-2.5 border transition-all flex flex-col justify-between ${
                 !cell.isCurrentMonth
                   ? 'bg-slate-50/50 border-slate-100 opacity-40'
+                  : isToday
+                  ? 'bg-orange-50/40 border-orange-400 ring-2 ring-orange-300 shadow-xs'
                   : hasData
                   ? 'bg-white border-slate-200 hover:border-orange-400 hover:shadow-md cursor-pointer group'
                   : 'bg-slate-50/40 border-slate-100'
@@ -244,17 +242,26 @@ export const WorkScheduleCalendarView: React.FC<WorkScheduleCalendarViewProps> =
               <div className="flex items-center justify-between">
                 <span
                   className={`text-xs sm:text-sm font-black w-6 h-6 rounded-lg flex items-center justify-center ${
-                    cell.isWeekend
+                    isToday
+                      ? 'bg-orange-500 text-white shadow-2xs'
+                      : cell.isWeekend
                       ? 'text-rose-600 bg-rose-50'
                       : 'text-slate-800'
-                  } ${schedule ? 'group-hover:bg-orange-600 group-hover:text-white transition-colors' : ''}`}
+                  } ${schedule && !isToday ? 'group-hover:bg-orange-600 group-hover:text-white transition-colors' : ''}`}
                 >
                   {cell.dayNumber}
                 </span>
 
-                {schedule && schedule.totalLeaves > 0 && (
-                  <span className="w-2 h-2 rounded-full bg-rose-500 animate-pulse" title={`มีคนลา ${schedule.totalLeaves} คน`} />
-                )}
+                <div className="flex items-center gap-1">
+                  {isToday && (
+                    <span className="px-1.5 py-0.2 rounded-md bg-orange-100 text-orange-800 text-[10px] font-extrabold border border-orange-200">
+                      วันนี้
+                    </span>
+                  )}
+                  {schedule && schedule.totalLeaves > 0 && (
+                    <span className="w-2 h-2 rounded-full bg-rose-500 animate-pulse" title={`มีคนลา ${schedule.totalLeaves} คน`} />
+                  )}
+                </div>
               </div>
 
               {/* Day Content / Badges */}

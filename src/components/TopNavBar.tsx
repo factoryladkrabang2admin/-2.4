@@ -10,7 +10,9 @@ import {
   User, 
   LogOut,
   LogIn,
-  Globe
+  Globe,
+  HeartHandshake,
+  ExternalLink
 } from 'lucide-react';
 import { NavigationTab, LaundryOrder } from '../types';
 import { useLanguage, LANGUAGE_CONFIGS, getLanguageConfig } from '../contexts/LanguageContext';
@@ -75,6 +77,8 @@ export const TopNavBar: React.FC<TopNavBarProps> = ({
         return language === 'th' ? 'ค้นหาชื่อพนักงาน, วันที่, ฝ่ายงาน, สถานะทำงาน/วันหยุด/ลา...' : 'Search employee, date, department, shift status...';
       case 'ot':
         return language === 'th' ? 'ค้นหารหัสพนักงาน, ชื่อ, ฝ่ายงาน, เอกสาร OT...' : 'Search employee ID, name, department, OT doc...';
+      case 'payslip':
+        return language === 'th' ? 'ระบบสลิปเงินเดือนออนไลน์ e-Pay (epay.pbplc.co.th)...' : 'e-Pay online payslip system...';
       default:
         return t.searchPlaceholder;
     }
@@ -122,6 +126,20 @@ export const TopNavBar: React.FC<TopNavBarProps> = ({
 
       {/* Right: Actions & User Avatar */}
       <div className="flex items-center gap-2 md:gap-3">
+        {/* Welfare (สวัสดิการ) Link - Restricted to Admin and Page Managers Only (Icon-only วางไว้หน้าไอคอนเปลี่ยนภาษา) */}
+        {(isUserAdmin || isSuperAdmin || currentUser?.isAdmin) && (
+          <a
+            href="https://script.google.com/macros/s/AKfycbzWFzj_Qwy743_V7jeMlqufsK1n8xQYfCcSCqLIIK2WEeI01C76WealY4zEk87HW6-U4w/exec"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="p-2 bg-white hover:bg-rose-50/80 text-rose-600 hover:text-rose-700 border border-rose-200/90 hover:border-rose-300 rounded-xl transition-all cursor-pointer shadow-xs group flex items-center justify-center"
+            title={language === 'th' ? 'สวัสดิการ (เฉพาะผู้ดูแลและแอดมินเพจ) - เปิดในแท็บใหม่' : 'Welfare System (Admin & Page Manager Only) - Open in new tab'}
+            aria-label={language === 'th' ? 'สวัสดิการ' : 'Welfare'}
+          >
+            <HeartHandshake className="w-4 h-4 text-rose-500 group-hover:scale-110 transition-transform" />
+          </a>
+        )}
+
         {/* Quick Language Toggle Pill with Flag Only */}
         <div className="relative">
           <button

@@ -1,13 +1,15 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { NavigationTab } from '../types';
 import { LOGO_URL } from '../data/mockData';
 import { 
   LayoutDashboard, 
   X, 
   Shirt,
+  DoorOpen,
   Wrench,
   CalendarDays,
-  Clock
+  Clock,
+  CreditCard
 } from 'lucide-react';
 import { useLanguage } from '../contexts/LanguageContext';
 import { DEFAULT_ADMIN_USER, AdminUserAccount } from '../data/mockData';
@@ -49,13 +51,23 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const { t, language } = useLanguage();
   const [activeBreadHover, setActiveBreadHover] = useState<string | null>(null);
 
-  const navItems: { id: NavigationTab; label: string; icon: React.ReactNode; breadKind: BreadKind; breadName: string }[] = [
+  const navItems: { 
+    id: NavigationTab; 
+    label: string; 
+    icon: React.ReactNode; 
+    breadKind: BreadKind; 
+    breadName: string;
+    requiresAuth: boolean;
+    isExternal?: boolean;
+    url?: string;
+  }[] = [
     {
       id: 'dashboard',
       label: t.dashboard,
       icon: <LayoutDashboard className="w-5 h-5" />,
       breadKind: 'croissant',
       breadName: 'ครัวซองต์เนยสด',
+      requiresAuth: true,
     },
     {
       id: 'laundry',
@@ -63,6 +75,15 @@ export const Sidebar: React.FC<SidebarProps> = ({
       icon: <Shirt className="w-5 h-5" />,
       breadKind: 'toast',
       breadName: 'ขนมปังปิ้งเนยฉ่ำ',
+      requiresAuth: false,
+    },
+    {
+      id: 'meeting_room',
+      label: t.meetingRoomBooking,
+      icon: <DoorOpen className="w-5 h-5" />,
+      breadKind: 'bagel',
+      breadName: 'เบเกิลอบหอมกรุ่น',
+      requiresAuth: false,
     },
     {
       id: 'maintenance',
@@ -70,6 +91,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
       icon: <Wrench className="w-5 h-5" />,
       breadKind: 'pretzel',
       breadName: 'เพรทเซลอบเกลือ',
+      requiresAuth: true,
     },
     {
       id: 'schedule',
@@ -77,6 +99,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
       icon: <CalendarDays className="w-5 h-5" />,
       breadKind: 'baguette',
       breadName: 'บาแกตต์กรอบนอกนุ่มใน',
+      requiresAuth: true,
     },
     {
       id: 'ot',
@@ -84,8 +107,27 @@ export const Sidebar: React.FC<SidebarProps> = ({
       icon: <Clock className="w-5 h-5" />,
       breadKind: 'donut',
       breadName: 'โดนัทหวานกรอบ',
+      requiresAuth: true,
+    },
+    {
+      id: 'payslip',
+      label: t.payslip,
+      icon: <CreditCard className="w-5 h-5" />,
+      breadKind: 'farmhouse',
+      breadName: 'ขนมปังฟาร์มเฮ้าส์',
+      requiresAuth: true,
+      isExternal: true,
+      url: 'https://epay.pbplc.co.th/',
     },
   ];
+
+  const visibleNavItems = useMemo(() => {
+    if (isAuthenticated) {
+      return navItems;
+    }
+    // General users can only view Laundry and Meeting Rooms
+    return navItems.filter((item) => !item.requiresAuth);
+  }, [isAuthenticated, navItems]);
 
   return (
     <>
@@ -116,7 +158,11 @@ export const Sidebar: React.FC<SidebarProps> = ({
             <div 
               className="flex items-center gap-3 cursor-pointer group"
               onClick={() => {
-                onSelectTab('dashboard');
+                if (!isAuthenticated) {
+                  onSelectTab('laundry');
+                } else {
+                  onSelectTab('dashboard');
+                }
                 onCloseMobile();
               }}
             >
@@ -142,7 +188,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
           {/* Navigation Links with Bread Partner Icons */}
           <nav className="flex-1 px-3 space-y-2 overflow-y-auto">
-            {navItems.map((item) => {
+            {visibleNavItems.map((item) => {
               const isActive = currentTab === item.id;
               const isHovered = activeBreadHover === item.id;
 
@@ -150,7 +196,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 <button
                   key={item.id}
                   onClick={() => {
-                    if (item.id === 'settings' && onOpenSettings) {
+                    if (item.isExternal && item.url) {
+                      window.open(item.url, '_blank', 'noopener,noreferrer');
+                    } else if (item.id === 'settings' && onOpenSettings) {
                       onOpenSettings();
                     } else {
                       onSelectTab(item.id);
@@ -165,7 +213,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                       : 'text-white/85 hover:text-white bg-black/20 hover:bg-white/15 border-white/10 hover:border-white/25 hover:scale-[1.01]'
                   }`}
                 >
-                  <div className="flex items-center gap-3">
+                  <div className="flex items-center gap-3 min-w-0">
                     <span 
                       className={`p-1.5 rounded-xl transition-all duration-300 ${
                         isActive 
@@ -175,12 +223,14 @@ export const Sidebar: React.FC<SidebarProps> = ({
                     >
                       {item.icon}
                     </span>
-                    <span className="tracking-wide drop-shadow-xs font-semibold">{item.label}</span>
+                    <div className="flex items-center gap-1.5 min-w-0">
+                      <span className="tracking-wide drop-shadow-xs font-semibold truncate">{item.label}</span>
+                    </div>
                   </div>
 
                   {/* Distinct Animated Bread Icon for each navigation tab */}
                   <div 
-                    className={`transition-all duration-300 transform flex items-center justify-center ${
+                    className={`transition-all duration-300 transform flex items-center justify-center shrink-0 ${
                       isActive 
                         ? 'scale-125 rotate-6 animate-bread-bob' 
                         : isHovered 

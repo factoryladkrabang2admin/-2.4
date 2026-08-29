@@ -50,16 +50,8 @@ export function extractOtDate(record: OtRecord): { year: number; month: number; 
 export const OtCalendarView: React.FC<OtCalendarViewProps> = ({ records, onSelectRecord }) => {
   const { language } = useLanguage();
 
-  // Find default active month (from newest record date or August 2026 / current date)
-  const [currentDate, setCurrentDate] = useState<Date>(() => {
-    for (let i = records.length - 1; i >= 0; i--) {
-      const parsed = extractOtDate(records[i]);
-      if (parsed) {
-        return new Date(parsed.year, parsed.month, 1);
-      }
-    }
-    return new Date(2026, 7, 1);
-  });
+  // Find default active month to current date (Today)
+  const [currentDate, setCurrentDate] = useState<Date>(() => new Date());
 
   const [selectedDay, setSelectedDay] = useState<number | null>(null);
   const [showDayModal, setShowDayModal] = useState<boolean>(false);
@@ -104,6 +96,7 @@ export const OtCalendarView: React.FC<OtCalendarViewProps> = ({ records, onSelec
     setCurrentDate(new Date(year, month + 1, 1));
   };
 
+  const today = new Date();
   const activeDayRecords = selectedDay ? (dayRecordsMap.get(selectedDay) || []) : [];
 
   return (
@@ -136,10 +129,10 @@ export const OtCalendarView: React.FC<OtCalendarViewProps> = ({ records, onSelec
           </button>
           <button
             type="button"
-            onClick={() => setCurrentDate(new Date(2026, 7, 1))}
-            className="px-3.5 py-2 rounded-xl text-xs font-bold bg-slate-100 hover:bg-slate-200 text-slate-700 transition-all cursor-pointer"
+            onClick={() => setCurrentDate(new Date())}
+            className="px-3.5 py-2 rounded-xl text-xs font-bold bg-[#002045] hover:bg-[#003366] text-white transition-all cursor-pointer shadow-xs"
           >
-            {language === 'th' ? 'เดือนล่าสุด' : 'Latest'}
+            {language === 'th' ? 'วันนี้' : 'Today'}
           </button>
           <button
             type="button"
@@ -180,8 +173,8 @@ export const OtCalendarView: React.FC<OtCalendarViewProps> = ({ records, onSelec
           const dayNumber = i + 1;
           const dayList = dayRecordsMap.get(dayNumber) || [];
           const hasRecords = dayList.length > 0;
-          const totalDayHours = dayList.reduce((sum, r) => sum + (r.totalHours || 0), 0);
           const isSelected = selectedDay === dayNumber;
+          const isCurrentToday = dayNumber === today.getDate() && month === today.getMonth() && year === today.getFullYear();
 
           return (
             <div
@@ -193,29 +186,35 @@ export const OtCalendarView: React.FC<OtCalendarViewProps> = ({ records, onSelec
               className={`min-h-[85px] sm:min-h-[105px] p-2 rounded-2xl border transition-all cursor-pointer flex flex-col justify-between select-none ${
                 isSelected
                   ? 'border-sky-500 bg-sky-50/60 ring-2 ring-sky-300 shadow-md'
+                  : isCurrentToday
+                  ? 'border-orange-400 bg-orange-50/40 ring-2 ring-orange-300 shadow-xs'
                   : hasRecords
                   ? 'border-sky-200 bg-white hover:border-sky-400 hover:shadow-md'
                   : 'border-slate-100 bg-white/70 hover:bg-slate-50 text-slate-400'
               }`}
             >
               <div className="flex items-center justify-between w-full">
-                <span className={`text-xs sm:text-sm font-bold ${
-                  hasRecords ? 'text-[#002045]' : 'text-slate-400'
+                <span className={`text-xs sm:text-sm font-black w-6 h-6 rounded-lg flex items-center justify-center ${
+                  isCurrentToday
+                    ? 'bg-orange-500 text-white shadow-2xs'
+                    : hasRecords 
+                    ? 'text-[#002045]' 
+                    : 'text-slate-500'
                 }`}>
                   {dayNumber}
                 </span>
 
-                {hasRecords && (
-                  <span className="w-5 h-5 sm:w-6 sm:h-6 rounded-full bg-[#002045] text-white text-[11px] sm:text-xs font-bold flex items-center justify-center shadow-xs">
-                    {dayList.length}
+                {isCurrentToday && (
+                  <span className="px-1.5 py-0.2 rounded-md bg-orange-100 text-orange-800 text-[10px] font-extrabold border border-orange-200">
+                    {language === 'th' ? 'วันนี้' : 'Today'}
                   </span>
                 )}
               </div>
 
-              {/* Centered clean indicator for days with records */}
+              {/* Centered clean indicator for days with records (single count display) */}
               {hasRecords ? (
                 <div className="flex-1 flex items-center justify-center py-1">
-                  <span className="text-xs sm:text-sm font-black text-sky-700 bg-sky-50 border border-sky-200/80 px-2 py-0.5 rounded-lg shadow-2xs">
+                  <span className="text-xs sm:text-sm font-black text-sky-800 bg-sky-100/90 border border-sky-300 px-2.5 py-0.5 rounded-lg shadow-2xs min-w-[28px] text-center">
                     {dayList.length}
                   </span>
                 </div>

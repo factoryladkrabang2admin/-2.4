@@ -1,4 +1,22 @@
-export type NavigationTab = 'dashboard' | 'projects' | 'team' | 'reports' | 'laundry' | 'maintenance' | 'schedule' | 'ot' | 'rags_gloves' | 'settings' | 'profile';
+export type NavigationTab = 'dashboard' | 'projects' | 'team' | 'reports' | 'laundry' | 'meeting_room' | 'maintenance' | 'schedule' | 'ot' | 'payslip' | 'rags_gloves' | 'settings' | 'profile';
+
+export type MeetingStatus = 'กำลังประชุม' | 'รอเริ่มวันนี้' | 'นัดหมายล่วงหน้า' | 'เสร็จสิ้นแล้ว';
+
+export interface MeetingRoomBooking {
+  id: string;
+  seq: number;
+  timestamp: string;          // ประทับเวลา e.g. "24/8/2026, 15:17:57"
+  room: string;               // เลือกห้องประชุม e.g. "TPM 1", "TPM 2"
+  bookingDate: string;        // วันที่ e.g. "3/8/2026", "28/10/2026"
+  startTime: string;          // เวลาที่เริ่ม e.g. "10:30:00" or "10:30"
+  endTime: string;            // เวลาสิ้นสุด e.g. "11:30:00" or "11:30"
+  subject: string;            // เรื่องที่ประชุม/อบรม
+  department: string;         // แผนก/ฝ่าย
+  attendeesCount: number;     // จำนวน (คน)
+  phoneNumber: string;        // เบอร์โทร e.g. "4510"
+  status?: MeetingStatus;
+  note?: string;
+}
 
 export type WorkScheduleStatus = 'ทำงาน' | 'วันหยุด' | 'ลาพักร้อน' | 'ลาป่วย' | 'ลากิจ' | 'ขาดงาน' | 'วันนักขัตฤกษ์';
 

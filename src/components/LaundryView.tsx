@@ -625,19 +625,21 @@ export const LaundryView: React.FC<LaundryViewProps> = ({
                 <CalendarDays className="w-4 h-4" />
               </button>
 
-              {/* เส้นคั่นบางๆ */}
-              <div className="w-[1px] h-4 bg-emerald-200/90 mx-0.5" />
-
-              {/* ไอคอน QR code จากลิ้งค์ Google Form วางไว้หลังมุมมองปฏิทิน */}
-              <button
-                type="button"
-                onClick={() => setShowQrModal(true)}
-                className="p-2 rounded-lg transition-all cursor-pointer text-[#064e3b]/85 hover:text-[#064e3b] hover:bg-emerald-100/70 active:scale-95 group relative"
-                title={language === 'th' ? 'QR Code แบบฟอร์มกรอกข้อมูลการซัก-อบผ้า (Google Form)' : 'Laundry Google Form QR Code'}
-                aria-label={language === 'th' ? 'QR Code แบบฟอร์มกรอกข้อมูลการซัก-อบผ้า' : 'Laundry Google Form QR Code'}
-              >
-                <QrCode className="w-4 h-4 text-[#064e3b] transition-transform group-hover:scale-110" />
-              </button>
+              {/* เส้นคั่นบางๆ และไอคอน QR code (จำกัดสิทธิ์เฉพาะผู้ดูแลและแอดมินเพจเท่านั้น) */}
+              {canAccessGoogleSheet && (
+                <>
+                  <div className="w-[1px] h-4 bg-emerald-200/90 mx-0.5" />
+                  <button
+                    type="button"
+                    onClick={() => setShowQrModal(true)}
+                    className="p-2 rounded-lg transition-all cursor-pointer text-[#064e3b]/85 hover:text-[#064e3b] hover:bg-emerald-100/70 active:scale-95 group relative"
+                    title={language === 'th' ? 'QR Code แบบฟอร์มกรอกข้อมูลการซัก-อบผ้า (เฉพาะผู้ดูแล/แอดมิน)' : 'Laundry Google Form QR Code (Admin Only)'}
+                    aria-label={language === 'th' ? 'QR Code แบบฟอร์มกรอกข้อมูลการซัก-อบผ้า' : 'Laundry Google Form QR Code'}
+                  >
+                    <QrCode className="w-4 h-4 text-[#064e3b] transition-transform group-hover:scale-110" />
+                  </button>
+                </>
+              )}
             </div>
           </div>
         </div>
@@ -1729,8 +1731,8 @@ export const LaundryView: React.FC<LaundryViewProps> = ({
         </div>
       )}
 
-      {/* QR Code Modal for Google Form */}
-      {showQrModal && (
+      {/* QR Code Modal for Google Form (Admin / Supervisor Only) */}
+      {showQrModal && canAccessGoogleSheet && (
         <div 
           className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in duration-200"
           onClick={() => setShowQrModal(false)}
