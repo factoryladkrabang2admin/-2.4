@@ -30,11 +30,15 @@ import {
   Edit3,
   FileEdit,
   Pencil,
-  Info
+  Info,
+  RefreshCw,
+  Key,
+  Unlock,
+  Filter
 } from 'lucide-react';
 import { useLanguage, LANGUAGE_CONFIGS } from '../contexts/LanguageContext';
 import { FlagIcon } from './FlagIcon';
-import { DEFAULT_ADMIN_USER, AdminUserAccount } from '../data/mockData';
+import { DEFAULT_ADMIN_USER, AdminUserAccount, getAllOtStaffList, saveUpdatedUserCredentials } from '../data/mockData';
 import { realtimeHub } from '../services/realtimeService';
 
 export type SettingsTabType = 'language' | 'general' | 'notifications' | 'security';
@@ -90,14 +94,29 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   const [currentOrderCount, setCurrentOrderCount] = useState(0);
   const [currentProjectCount, setCurrentProjectCount] = useState(0);
 
-  // Registered users state
+  // Registered users and staff directory state
   const [registeredUsers, setRegisteredUsers] = useState<AdminUserAccount[]>([]);
   const [userSearchQuery, setUserSearchQuery] = useState('');
+  const [userFilterCategory, setUserFilterCategory] = useState<'all' | 'customized' | 'admin' | 'canEdit'>('all');
   const [visiblePasswords, setVisiblePasswords] = useState<Record<string, boolean>>({});
   const [copiedUserPass, setCopiedUserPass] = useState<string | null>(null);
   const [userToDelete, setUserToDelete] = useState<string | null>(null);
+  const [userToReset, setUserToReset] = useState<string | null>(null);
   const [confirmClearAllUsers, setConfirmClearAllUsers] = useState(false);
   const [userActionToast, setUserActionToast] = useState<{ message: string; type: 'success' | 'info' } | null>(null);
+
+  // Modal / Form state for Admin editing an employee's credentials directly
+  const [editingEmployee, setEditingEmployee] = useState<{
+    originalUsername: string;
+    employeeId: string;
+    name: string;
+    username: string;
+    password: string;
+    role: string;
+    isAdmin: boolean;
+    canEdit: boolean;
+  } | null>(null);
+  const [showEditEmpPass, setShowEditEmpPass] = useState(false);
 
   const [adminAuth, setAdminAuth] = useState<AdminUserAccount>(() => {
     try {
@@ -167,178 +186,289 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     setTimeout(() => setCopiedPassword(false), 1500);
   };
 
-  const handleToggleUserPassword = (username: string) => {
+  const handleToggleUserPassword = (usernameKey: string) => {
     setVisiblePasswords(prev => ({
       ...prev,
-      [username]: !prev[username]
+      [usernameKey]: !prev[usernameKey]
     }));
   };
 
-  const handleCopyUserPassword = (username: string, pass: string) => {
+  const handleCopyUserPassword = (usernameKey: string, pass: string) => {
     navigator.clipboard?.writeText(pass);
-    setCopiedUserPass(username);
+    setCopiedUserPass(usernameKey);
     setTimeout(() => setCopiedUserPass(null), 1500);
   };
 
   const handleDeleteUser = (username: string) => {
     realtimeHub.deleteRegisteredUser(username);
-    setRegisteredUsers(realtimeHub.getStoredRegisteredUsers());
+    const updated = realtimeHub.getStoredRegisteredUsers();
+    setRegisteredUsers(updated);
     setUserToDelete(null);
+    setUserActionToast({
+      message: language === 'th' ? `ลบการตั้งค่าบัญชี @${username} เรียบร้อยแล้ว` : `Removed @${username}`,
+      type: 'info'
+    });
+    setTimeout(() => setUserActionToast(null), 3000);
+  };
+
+  const handleResetToDefault = (empId: string, name: string) => {
+    // Remove custom registered override so user resets to default (Username=EmpId, Password=EmpId)
+    const list = realtimeHub.getStoredRegisteredUsers();
+    const filtered = list.filter(u => {
+      const uEmpId = (u.employeeId || '').toUpperCase();
+      const uUser = (u.username || '').toLowerCase();
+      if (empId && uEmpId && empId.toUpperCase() === uEmpId) return false;
+      if (empId && uUser && empId.toLowerCase() === uUser) return false;
+      return true;
+    });
+
+    realtimeHub.saveRegisteredUsers(filtered);
+    setRegisteredUsers(filtered);
+    setUserToReset(null);
+
+    setUserActionToast({
+      message: language === 'th' 
+        ? `รีเซ็ตชื่อผู้ใช้และรหัสผ่านของ ${name} [${empId}] กลับเป็นค่าเริ่มต้น (รหัสพนักงาน) แล้ว` 
+        : `Reset credentials for ${name} to default employee ID`,
+      type: 'success'
+    });
+    setTimeout(() => setUserActionToast(null), 3500);
+  };
+
+  const handleSaveEditedEmployee = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingEmployee) return;
+
+    const cleanUser = editingEmployee.username.trim().toLowerCase().replace(/^@/, '');
+    if (!cleanUser) return;
+
+    const updatedAccount: AdminUserAccount = {
+      name: editingEmployee.name.trim(),
+      username: cleanUser,
+      employeeId: editingEmployee.employeeId,
+      password: editingEmployee.password.trim(),
+      role: editingEmployee.role.trim() || 'พนักงานปฏิบัติการ',
+      isAdmin: editingEmployee.isAdmin,
+      canEdit: editingEmployee.canEdit,
+      lastLogin: `อัปเดตโดยแอดมิน (${new Date().toLocaleDateString('th-TH')})`,
+      permissions: {
+        canEditData: editingEmployee.canEdit,
+        canManageOrders: editingEmployee.canEdit,
+        canManageProjects: editingEmployee.canEdit,
+        canDeleteData: editingEmployee.isAdmin
+      }
+    };
+
+    saveUpdatedUserCredentials(updatedAccount);
+    const updated = realtimeHub.getStoredRegisteredUsers();
+    setRegisteredUsers(updated);
+    setEditingEmployee(null);
+
+    setUserActionToast({
+      message: language === 'th' 
+        ? `บันทึกข้อมูล Username & Password ของ @${cleanUser} เรียบร้อยแล้ว` 
+        : `Updated credentials for @${cleanUser}`,
+      type: 'success'
+    });
+    setTimeout(() => setUserActionToast(null), 3000);
   };
 
   const handleClearAllRegisteredUsers = () => {
     realtimeHub.saveRegisteredUsers([]);
     setRegisteredUsers([]);
     setConfirmClearAllUsers(false);
+    setUserActionToast({
+      message: language === 'th' ? 'ล้างการตั้งค่ากำหนดเองทั้งหมดแล้ว พนักงานทุกคนกลับสู่รหัสเริ่มต้น' : 'Cleared custom accounts',
+      type: 'info'
+    });
+    setTimeout(() => setUserActionToast(null), 3000);
   };
 
-  const handleToggleAdminRole = (username: string) => {
+  const handleToggleAdminRole = (account: { username: string; employeeId?: string; name: string; role: string; isAdmin?: boolean; canEdit?: boolean }) => {
     const users = realtimeHub.getStoredRegisteredUsers();
-    const targetUser = users.find(u => u.username.toLowerCase() === username.toLowerCase());
-    if (!targetUser) return;
+    const matchEmp = (account.employeeId || '').toUpperCase();
+    const matchUser = (account.username || '').toLowerCase();
 
-    const newIsAdmin = !targetUser.isAdmin;
-    const updatedUsers = users.map(u => {
-      if (u.username.toLowerCase() === username.toLowerCase()) {
-        const empCode = (u.role.match(/(?:รหัสพนักงาน:?\s*|EMP:?\s*)([A-Z0-9_-]+)/i) || [])[1] || '';
-        const baseRole = empCode ? `รหัสพนักงาน: ${empCode}` : 'เจ้าหน้าที่ปฏิบัติการ';
-        return {
-          ...u,
-          isAdmin: newIsAdmin,
-          role: newIsAdmin 
-            ? (empCode ? `ผู้ดูแลระบบ (Admin) • ${empCode}` : (language === 'th' ? 'ผู้ดูแลระบบ (Admin)' : 'Administrator'))
-            : baseRole,
-          canEdit: newIsAdmin ? true : (u.canEdit ?? true),
-          permissions: {
-            canEditData: true,
-            canManageOrders: true,
-            canManageProjects: true,
-            canDeleteData: newIsAdmin,
-            ...(u.permissions || {})
-          }
-        };
-      }
-      return u;
-    });
+    let target = users.find(u => 
+      (matchEmp && (u.employeeId || '').toUpperCase() === matchEmp) || 
+      (u.username || '').toLowerCase() === matchUser
+    );
+
+    const newIsAdmin = !Boolean(target ? target.isAdmin : account.isAdmin);
+
+    let updatedUsers: AdminUserAccount[];
+    if (target) {
+      updatedUsers = users.map(u => {
+        if ((matchEmp && (u.employeeId || '').toUpperCase() === matchEmp) || (u.username || '').toLowerCase() === matchUser) {
+          return {
+            ...u,
+            isAdmin: newIsAdmin,
+            role: newIsAdmin ? (language === 'th' ? 'ผู้ดูแลระบบ (Admin)' : 'Administrator') : (u.role || 'เจ้าหน้าที่ปฏิบัติการ'),
+            canEdit: newIsAdmin ? true : (u.canEdit ?? true),
+            permissions: {
+              ...(u.permissions || {}),
+              canEditData: true,
+              canManageOrders: true,
+              canManageProjects: true,
+              canDeleteData: newIsAdmin,
+            }
+          };
+        }
+        return u;
+      });
+    } else {
+      // Create new custom registered record for this employee
+      const newRecord: AdminUserAccount = {
+        name: account.name,
+        username: account.username,
+        employeeId: account.employeeId,
+        password: account.employeeId || '123456',
+        role: newIsAdmin ? (language === 'th' ? 'ผู้ดูแลระบบ (Admin)' : 'Administrator') : account.role,
+        isAdmin: newIsAdmin,
+        canEdit: true,
+        lastLogin: `ปรับสิทธิ์แอดมิน (${new Date().toLocaleDateString('th-TH')})`,
+        permissions: {
+          canEditData: true,
+          canManageOrders: true,
+          canManageProjects: true,
+          canDeleteData: newIsAdmin,
+        }
+      };
+      updatedUsers = [...users, newRecord];
+    }
 
     realtimeHub.saveRegisteredUsers(updatedUsers);
     setRegisteredUsers(updatedUsers);
-    try {
-      localStorage.setItem('proworkflow_registered_users', JSON.stringify(updatedUsers));
-      const cur = localStorage.getItem('proworkflow_current_user');
-      if (cur) {
-        const parsedCur = JSON.parse(cur);
-        if (parsedCur.username.toLowerCase() === username.toLowerCase()) {
-          const updatedCur = updatedUsers.find(u => u.username.toLowerCase() === username.toLowerCase());
-          if (updatedCur) {
-            localStorage.setItem('proworkflow_current_user', JSON.stringify(updatedCur));
-          }
-        }
-      }
-    } catch {
-      // storage
-    }
 
     setUserActionToast({
       message: newIsAdmin
-        ? (language === 'th' ? `ปรับสิทธิ์ @${username} เป็นแอดมิน (Admin) เรียบร้อยแล้ว` : `Granted Admin privileges to @${username}`)
-        : (language === 'th' ? `เปลี่ยนสิทธิ์ @${username} เป็นสมาชิกทั่วไปเรียบร้อยแล้ว` : `Changed @${username} to Member role`),
+        ? (language === 'th' ? `ปรับสิทธิ์ ${account.name} (@${account.username}) เป็นแอดมินเรียบร้อยแล้ว` : `Granted Admin privileges to @${account.username}`)
+        : (language === 'th' ? `เปลี่ยนสิทธิ์ ${account.name} (@${account.username}) เป็นสมาชิกทั่วไปแล้ว` : `Changed @${account.username} to Member role`),
       type: 'success'
     });
     setTimeout(() => setUserActionToast(null), 3000);
   };
 
-  const handleToggleEditPermission = (username: string) => {
+  const handleToggleEditPermission = (account: { username: string; employeeId?: string; name: string; role: string; isAdmin?: boolean; canEdit?: boolean }) => {
     const users = realtimeHub.getStoredRegisteredUsers();
-    const targetUser = users.find(u => u.username.toLowerCase() === username.toLowerCase());
-    if (!targetUser) return;
+    const matchEmp = (account.employeeId || '').toUpperCase();
+    const matchUser = (account.username || '').toLowerCase();
 
-    const newCanEdit = targetUser.canEdit === false ? true : false;
-    const updatedUsers = users.map(u => {
-      if (u.username.toLowerCase() === username.toLowerCase()) {
-        return {
-          ...u,
-          canEdit: newCanEdit,
-          permissions: {
-            ...(u.permissions || {}),
-            canEditData: newCanEdit,
-            canManageOrders: newCanEdit,
-            canManageProjects: newCanEdit
-          }
-        };
-      }
-      return u;
-    });
+    let target = users.find(u => 
+      (matchEmp && (u.employeeId || '').toUpperCase() === matchEmp) || 
+      (u.username || '').toLowerCase() === matchUser
+    );
+
+    const currentCanEdit = target ? target.canEdit !== false : account.canEdit !== false;
+    const newCanEdit = !currentCanEdit;
+
+    let updatedUsers: AdminUserAccount[];
+    if (target) {
+      updatedUsers = users.map(u => {
+        if ((matchEmp && (u.employeeId || '').toUpperCase() === matchEmp) || (u.username || '').toLowerCase() === matchUser) {
+          return {
+            ...u,
+            canEdit: newCanEdit,
+            permissions: {
+              ...(u.permissions || {}),
+              canEditData: newCanEdit,
+              canManageOrders: newCanEdit,
+              canManageProjects: newCanEdit
+            }
+          };
+        }
+        return u;
+      });
+    } else {
+      const newRecord: AdminUserAccount = {
+        name: account.name,
+        username: account.username,
+        employeeId: account.employeeId,
+        password: account.employeeId || '123456',
+        role: account.role,
+        isAdmin: Boolean(account.isAdmin),
+        canEdit: newCanEdit,
+        lastLogin: `ปรับสิทธิ์แก้ไข (${new Date().toLocaleDateString('th-TH')})`,
+        permissions: {
+          canEditData: newCanEdit,
+          canManageOrders: newCanEdit,
+          canManageProjects: newCanEdit,
+          canDeleteData: Boolean(account.isAdmin)
+        }
+      };
+      updatedUsers = [...users, newRecord];
+    }
 
     realtimeHub.saveRegisteredUsers(updatedUsers);
     setRegisteredUsers(updatedUsers);
-    try {
-      localStorage.setItem('proworkflow_registered_users', JSON.stringify(updatedUsers));
-      const cur = localStorage.getItem('proworkflow_current_user');
-      if (cur) {
-        const parsedCur = JSON.parse(cur);
-        if (parsedCur.username.toLowerCase() === username.toLowerCase()) {
-          const updatedCur = updatedUsers.find(u => u.username.toLowerCase() === username.toLowerCase());
-          if (updatedCur) {
-            localStorage.setItem('proworkflow_current_user', JSON.stringify(updatedCur));
-          }
-        }
-      }
-    } catch {
-      // storage
-    }
 
     setUserActionToast({
       message: newCanEdit
-        ? (language === 'th' ? `เปิดสิทธิ์การแก้ไขข้อมูลให้ @${username} แล้ว` : `Enabled edit permissions for @${username}`)
-        : (language === 'th' ? `จำกัดสิทธิ์ @${username} เป็นดูได้อย่างเดียว (ห้ามแก้ไข)` : `Restricted @${username} to view-only mode`),
+        ? (language === 'th' ? `เปิดสิทธิ์แก้ไขข้อมูลให้ ${account.name} (@${account.username}) แล้ว` : `Enabled edit permissions for @${account.username}`)
+        : (language === 'th' ? `จำกัดสิทธิ์ ${account.name} (@${account.username}) เป็นดูได้อย่างเดียว` : `Restricted @${account.username} to view-only mode`),
       type: 'success'
     });
     setTimeout(() => setUserActionToast(null), 3000);
   };
 
   const handleUpdateGranularPermission = (
-    username: string, 
+    account: { username: string; employeeId?: string; name: string; role: string; isAdmin?: boolean; canEdit?: boolean; permissions?: any },
     permKey: 'canEditData' | 'canManageOrders' | 'canManageProjects' | 'canDeleteData', 
     val: boolean
   ) => {
     const users = realtimeHub.getStoredRegisteredUsers();
-    const updatedUsers = users.map(u => {
-      if (u.username.toLowerCase() === username.toLowerCase()) {
-        const currentPerms = u.permissions || {
-          canEditData: u.canEdit !== false,
-          canManageOrders: u.canEdit !== false,
-          canManageProjects: u.canEdit !== false,
-          canDeleteData: false,
-        };
-        const updatedPerms = { ...currentPerms, [permKey]: val };
-        const anyEditPerm = Boolean(updatedPerms.canEditData || updatedPerms.canManageOrders || updatedPerms.canManageProjects);
-        return {
-          ...u,
-          canEdit: anyEditPerm,
-          permissions: updatedPerms
-        };
-      }
-      return u;
-    });
+    const matchEmp = (account.employeeId || '').toUpperCase();
+    const matchUser = (account.username || '').toLowerCase();
+
+    let target = users.find(u => 
+      (matchEmp && (u.employeeId || '').toUpperCase() === matchEmp) || 
+      (u.username || '').toLowerCase() === matchUser
+    );
+
+    let updatedUsers: AdminUserAccount[];
+    if (target) {
+      updatedUsers = users.map(u => {
+        if ((matchEmp && (u.employeeId || '').toUpperCase() === matchEmp) || (u.username || '').toLowerCase() === matchUser) {
+          const currentPerms = u.permissions || {
+            canEditData: u.canEdit !== false,
+            canManageOrders: u.canEdit !== false,
+            canManageProjects: u.canEdit !== false,
+            canDeleteData: false,
+          };
+          const updatedPerms = { ...currentPerms, [permKey]: val };
+          const anyEditPerm = Boolean(updatedPerms.canEditData || updatedPerms.canManageOrders || updatedPerms.canManageProjects);
+          return {
+            ...u,
+            canEdit: anyEditPerm,
+            permissions: updatedPerms
+          };
+        }
+        return u;
+      });
+    } else {
+      const defaultPerms = {
+        canEditData: true,
+        canManageOrders: true,
+        canManageProjects: true,
+        canDeleteData: false,
+        [permKey]: val
+      };
+      const anyEditPerm = Boolean(defaultPerms.canEditData || defaultPerms.canManageOrders || defaultPerms.canManageProjects);
+      const newRecord: AdminUserAccount = {
+        name: account.name,
+        username: account.username,
+        employeeId: account.employeeId,
+        password: account.employeeId || '123456',
+        role: account.role,
+        isAdmin: Boolean(account.isAdmin),
+        canEdit: anyEditPerm,
+        permissions: defaultPerms
+      };
+      updatedUsers = [...users, newRecord];
+    }
 
     realtimeHub.saveRegisteredUsers(updatedUsers);
     setRegisteredUsers(updatedUsers);
-    try {
-      localStorage.setItem('proworkflow_registered_users', JSON.stringify(updatedUsers));
-      const cur = localStorage.getItem('proworkflow_current_user');
-      if (cur) {
-        const parsedCur = JSON.parse(cur);
-        if (parsedCur.username.toLowerCase() === username.toLowerCase()) {
-          const updatedCur = updatedUsers.find(u => u.username.toLowerCase() === username.toLowerCase());
-          if (updatedCur) {
-            localStorage.setItem('proworkflow_current_user', JSON.stringify(updatedCur));
-          }
-        }
-      }
-    } catch {
-      // storage
-    }
   };
 
   const handleClearSampleData = () => {
@@ -403,13 +533,111 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     }, 800);
   };
 
-  // Filter registered users by search query
-  const filteredRegisteredUsers = registeredUsers.filter(u => {
+  // 1. Build comprehensive unified list of all staff and registered accounts
+  const otStaffDirectory = getAllOtStaffList();
+  
+  // Create unified staff user account objects
+  const allCombinedStaffAccounts = (() => {
+    const list: Array<AdminUserAccount & {
+      employeeId: string;
+      isCustomized: boolean;
+      originalEmpId: string;
+    }> = [];
+
+    const matchedRegisteredIds = new Set<string>();
+
+    // Process OT staff directory
+    otStaffDirectory.forEach(staff => {
+      const reg = registeredUsers.find(r => 
+        (r.employeeId && r.employeeId.toUpperCase() === staff.employeeId.toUpperCase()) ||
+        (r.username && r.username.toLowerCase() === staff.employeeId.toLowerCase())
+      );
+
+      if (reg) {
+        matchedRegisteredIds.add((reg.username || '').toLowerCase());
+        const isCustomized = (reg.username !== staff.employeeId) || (reg.password !== staff.employeeId);
+        list.push({
+          ...reg,
+          name: reg.name || staff.name,
+          employeeId: staff.employeeId,
+          originalEmpId: staff.employeeId,
+          role: reg.role || staff.department || 'พนักงานปฏิบัติการ',
+          isCustomized,
+          canEdit: reg.canEdit !== false,
+          isAdmin: Boolean(reg.isAdmin),
+          permissions: reg.permissions || {
+            canEditData: reg.canEdit !== false,
+            canManageOrders: reg.canEdit !== false,
+            canManageProjects: reg.canEdit !== false,
+            canDeleteData: Boolean(reg.isAdmin)
+          }
+        });
+      } else {
+        // Default OT staff account (Username = Emp ID, Password = Emp ID)
+        list.push({
+          name: staff.name,
+          username: staff.employeeId,
+          employeeId: staff.employeeId,
+          originalEmpId: staff.employeeId,
+          password: staff.employeeId,
+          role: staff.department || 'พนักงานปฏิบัติการ',
+          isCustomized: false,
+          canEdit: true,
+          isAdmin: false,
+          lastLogin: language === 'th' ? 'ค่าเริ่มต้น (รหัสพนักงาน)' : 'Default credentials',
+          permissions: {
+            canEditData: true,
+            canManageOrders: true,
+            canManageProjects: true,
+            canDeleteData: false
+          }
+        });
+      }
+    });
+
+    // Add remaining registered users not in OT directory (e.g. custom admin accounts)
+    registeredUsers.forEach(reg => {
+      if (!matchedRegisteredIds.has((reg.username || '').toLowerCase())) {
+        list.push({
+          ...reg,
+          employeeId: reg.employeeId || reg.username,
+          originalEmpId: reg.employeeId || reg.username,
+          isCustomized: true,
+          canEdit: reg.canEdit !== false,
+          isAdmin: Boolean(reg.isAdmin),
+          permissions: reg.permissions || {
+            canEditData: reg.canEdit !== false,
+            canManageOrders: reg.canEdit !== false,
+            canManageProjects: reg.canEdit !== false,
+            canDeleteData: Boolean(reg.isAdmin)
+          }
+        });
+      }
+    });
+
+    return list;
+  })();
+
+  // Metric counts
+  const totalAccountsCount = allCombinedStaffAccounts.length;
+  const customizedCount = allCombinedStaffAccounts.filter(u => u.isCustomized).length;
+  const adminAccountsCount = allCombinedStaffAccounts.filter(u => u.isAdmin).length;
+  const canEditAccountsCount = allCombinedStaffAccounts.filter(u => u.canEdit).length;
+
+  // Filter combined accounts by category tab & search query
+  const filteredStaffAccounts = allCombinedStaffAccounts.filter(u => {
+    // 1. Category tab filter
+    if (userFilterCategory === 'customized' && !u.isCustomized) return false;
+    if (userFilterCategory === 'admin' && !u.isAdmin) return false;
+    if (userFilterCategory === 'canEdit' && !u.canEdit) return false;
+
+    // 2. Search query filter
     if (!userSearchQuery.trim()) return true;
-    const q = userSearchQuery.toLowerCase();
+    const q = userSearchQuery.trim().toLowerCase();
     return (
-      u.name.toLowerCase().includes(q) ||
-      u.username.toLowerCase().includes(q) ||
+      (u.name && u.name.toLowerCase().includes(q)) ||
+      (u.username && u.username.toLowerCase().includes(q)) ||
+      (u.employeeId && u.employeeId.toLowerCase().includes(q)) ||
       (u.role && u.role.toLowerCase().includes(q))
     );
   });
@@ -878,51 +1106,166 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   </div>
                 )}
 
-                {/* 2. Registered Users & Access Management Section */}
+                {/* 2. Registered Users & Staff Credentials Management Section */}
                 <div className="p-4 bg-white rounded-2xl border-2 border-[#0061a5]/20 shadow-xs">
-                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-3 pb-2.5 border-b border-[#e2e8f0]">
-                    <div className="flex items-center gap-2">
-                      <div className="w-7 h-7 rounded-lg bg-[#f0f7ff] text-[#0061a5] flex items-center justify-center shrink-0">
+                  {/* Section Title & Summary */}
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-3 pb-3 border-b border-[#e2e8f0]">
+                    <div className="flex items-center gap-2.5">
+                      <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-[#0061a5] to-[#002045] text-white flex items-center justify-center shrink-0 shadow-2xs">
                         <Users className="w-4 h-4" />
                       </div>
                       <div>
-                        <h4 className="font-bold text-xs text-[#002045]">
-                          {language === 'th' ? 'ข้อมูลผู้ลงทะเบียนเข้าใช้งานระบบ' : 'Registered User Accounts & Access Log'}
+                        <h4 className="font-bold text-xs text-[#002045] flex items-center gap-1.5">
+                          <span>{language === 'th' ? 'ตรวจสอบและจัดการ Username & Password พนักงาน' : 'Staff Credentials & Access Management'}</span>
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 text-[10px] font-bold border border-emerald-200">
+                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                            Live Sync
+                          </span>
                         </h4>
                         <p className="text-[10px] text-[#74777f]">
-                          {language === 'th' ? 'รายการผู้ที่ลงทะเบียนใหม่จะแสดงที่นี่โดยอัตโนมัติ' : 'Users registered from portal are listed here automatically'}
+                          {language === 'th' 
+                            ? 'แอดมินสามารถดู ตรวจสอบ แก้ไข และรีเซ็ต Username/Password ของพนักงานทุกคนที่เปลี่ยนข้อมูลได้ที่นี่' 
+                            : 'Administrators can view, audit, modify, and reset credentials for all staff members here.'}
                         </p>
                       </div>
                     </div>
 
                     <div className="flex items-center gap-2 self-start sm:self-auto">
-                      <span className="px-2.5 py-0.5 rounded-full bg-[#f0f7ff] text-[#0061a5] text-[10px] font-bold border border-[#b3d7ff]">
-                        {registeredUsers.length} {language === 'th' ? 'บัญชีผู้ลงทะเบียน' : 'registered'}
-                      </span>
-                      {registeredUsers.length > 0 && (
+                      <button
+                        type="button"
+                        onClick={refreshSettingsData}
+                        className="px-2 py-1 text-[10px] font-semibold text-[#0061a5] hover:bg-[#f0f7ff] border border-[#b3d7ff] rounded-lg flex items-center gap-1 cursor-pointer transition-colors"
+                        title="Refresh list"
+                      >
+                        <RefreshCw className="w-3 h-3" />
+                        <span>{language === 'th' ? 'รีเฟรช' : 'Refresh'}</span>
+                      </button>
+
+                      {customizedCount > 0 && (
                         <button
                           type="button"
                           onClick={() => setConfirmClearAllUsers(true)}
-                          className="text-[10px] text-rose-600 hover:text-rose-800 font-semibold px-2 py-0.5 hover:bg-rose-50 rounded-md transition-colors cursor-pointer"
-                          title="Clear all registered accounts"
+                          className="text-[10px] text-rose-600 hover:text-rose-800 font-semibold px-2 py-1 hover:bg-rose-50 border border-rose-200 rounded-lg transition-colors cursor-pointer"
+                          title="Reset all customized accounts to default"
                         >
-                          {language === 'th' ? 'ล้างรายชื่อทั้งหมด' : 'Clear All'}
+                          {language === 'th' ? 'รีเซ็ตทั้งหมดเป็นค่าเริ่มต้น' : 'Reset All'}
                         </button>
                       )}
                     </div>
                   </div>
 
-                  {/* Clear All Confirmation Prompt */}
+                  {/* Summary Metric Badges */}
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-3">
+                    <div className="p-2 bg-slate-50 border border-slate-200 rounded-xl text-center">
+                      <div className="text-[10px] text-slate-500 font-medium">{language === 'th' ? 'พนักงานทั้งหมด' : 'Total Staff'}</div>
+                      <div className="text-sm font-extrabold text-[#002045]">{totalAccountsCount}</div>
+                    </div>
+                    <div className={`p-2 rounded-xl text-center border transition-all ${
+                      customizedCount > 0 
+                        ? 'bg-emerald-50/80 border-emerald-200 text-emerald-900' 
+                        : 'bg-slate-50 border-slate-200 text-slate-700'
+                    }`}>
+                      <div className="text-[10px] font-medium text-emerald-700 flex items-center justify-center gap-1">
+                        <Key className="w-3 h-3 text-emerald-600" />
+                        <span>{language === 'th' ? 'เปลี่ยนรหัสแล้ว' : 'Changed'}</span>
+                      </div>
+                      <div className="text-sm font-extrabold text-emerald-700">{customizedCount}</div>
+                    </div>
+                    <div className="p-2 bg-amber-50/80 border border-amber-200 rounded-xl text-center">
+                      <div className="text-[10px] text-amber-800 font-medium flex items-center justify-center gap-1">
+                        <Crown className="w-3 h-3 text-amber-600" />
+                        <span>{language === 'th' ? 'ผู้ดูแล (Admin)' : 'Admins'}</span>
+                      </div>
+                      <div className="text-sm font-extrabold text-amber-900">{adminAccountsCount}</div>
+                    </div>
+                    <div className="p-2 bg-[#f0f7ff] border border-[#b3d7ff] rounded-xl text-center">
+                      <div className="text-[10px] text-[#0061a5] font-medium flex items-center justify-center gap-1">
+                        <Edit3 className="w-3 h-3 text-[#0061a5]" />
+                        <span>{language === 'th' ? 'มีสิทธิ์แก้ไข' : 'Can Edit'}</span>
+                      </div>
+                      <div className="text-sm font-extrabold text-[#0061a5]">{canEditAccountsCount}</div>
+                    </div>
+                  </div>
+
+                  {/* Filter Tabs & Search Bar */}
+                  <div className="space-y-2 mb-3">
+                    <div className="flex items-center gap-1.5 overflow-x-auto pb-1 text-xs">
+                      <button
+                        type="button"
+                        onClick={() => setUserFilterCategory('all')}
+                        className={`px-2.5 py-1 rounded-lg font-bold text-[11px] transition-all cursor-pointer shrink-0 ${
+                          userFilterCategory === 'all'
+                            ? 'bg-[#002045] text-white shadow-2xs'
+                            : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                        }`}
+                      >
+                        {language === 'th' ? `ทั้งหมด (${totalAccountsCount})` : `All (${totalAccountsCount})`}
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => setUserFilterCategory('customized')}
+                        className={`px-2.5 py-1 rounded-lg font-bold text-[11px] transition-all cursor-pointer shrink-0 flex items-center gap-1 ${
+                          userFilterCategory === 'customized'
+                            ? 'bg-emerald-600 text-white shadow-2xs'
+                            : 'bg-emerald-50 text-emerald-800 border border-emerald-200 hover:bg-emerald-100'
+                        }`}
+                      >
+                        <CheckCircle2 className="w-3 h-3" />
+                        <span>{language === 'th' ? `เปลี่ยนรหัสผ่านแล้ว (${customizedCount})` : `Changed (${customizedCount})`}</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => setUserFilterCategory('admin')}
+                        className={`px-2.5 py-1 rounded-lg font-bold text-[11px] transition-all cursor-pointer shrink-0 flex items-center gap-1 ${
+                          userFilterCategory === 'admin'
+                            ? 'bg-amber-500 text-white shadow-2xs'
+                            : 'bg-amber-50 text-amber-800 border border-amber-200 hover:bg-amber-100'
+                        }`}
+                      >
+                        <Crown className="w-3 h-3" />
+                        <span>{language === 'th' ? `แอดมิน (${adminAccountsCount})` : `Admins (${adminAccountsCount})`}</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => setUserFilterCategory('canEdit')}
+                        className={`px-2.5 py-1 rounded-lg font-bold text-[11px] transition-all cursor-pointer shrink-0 flex items-center gap-1 ${
+                          userFilterCategory === 'canEdit'
+                            ? 'bg-[#0061a5] text-white shadow-2xs'
+                            : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                        }`}
+                      >
+                        <Edit3 className="w-3 h-3" />
+                        <span>{language === 'th' ? `สิทธิ์แก้ไข (${canEditAccountsCount})` : `Can Edit (${canEditAccountsCount})`}</span>
+                      </button>
+                    </div>
+
+                    {/* Search Bar */}
+                    <div className="relative">
+                      <Search className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-[#74777f]" />
+                      <input
+                        type="text"
+                        value={userSearchQuery}
+                        onChange={(e) => setUserSearchQuery(e.target.value)}
+                        placeholder={language === 'th' ? 'ค้นหาชื่อ, รหัสพนักงาน (เช่น 358167), ชื่อผู้ใช้, แผนก...' : 'Search name, employee ID, username, department...'}
+                        className="w-full pl-8 pr-3 py-1.5 bg-slate-50 border border-[#c4c6cf] rounded-lg text-xs outline-hidden focus:border-[#0061a5] focus:bg-white"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Reset All Confirmation Prompt */}
                   {confirmClearAllUsers && (
                     <div className="mb-3 p-3 bg-rose-50 rounded-xl border border-rose-200 animate-in fade-in duration-150">
                       <div className="flex items-start gap-2">
                         <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
                         <div className="flex-1">
                           <p className="text-xs font-bold text-rose-900">
-                            {language === 'th' ? 'ยืนยันลบรายชื่อผู้ลงทะเบียนทั้งหมด?' : 'Clear all registered user accounts?'}
+                            {language === 'th' ? 'ยืนยันรีเซ็ตชื่อผู้ใช้และรหัสผ่านพนักงานทุกคนกลับเป็นค่าเริ่มต้น?' : 'Reset all credentials to default employee IDs?'}
                           </p>
                           <p className="text-[11px] text-rose-700 mt-0.5">
-                            {language === 'th' ? 'ผู้ใช้งานที่ลงทะเบียนไว้จะไม่สามารถเข้าสู่ระบบได้' : 'These users will no longer be able to log in.'}
+                            {language === 'th' ? 'พนักงานทุกคนจะต้องใช้รหัสพนักงานเป็น Username และ Password เหมือนตอนเริ่มต้น' : 'All staff accounts will revert to using their Employee ID for both username and password.'}
                           </p>
                           <div className="flex items-center gap-2 mt-2">
                             <button
@@ -930,7 +1273,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                               onClick={handleClearAllRegisteredUsers}
                               className="px-2.5 py-1 bg-rose-600 hover:bg-rose-700 text-white rounded-md text-[11px] font-bold cursor-pointer"
                             >
-                              {language === 'th' ? 'ยืนยันล้างข้อมูล' : 'Yes, Clear All'}
+                              {language === 'th' ? 'ยืนยันรีเซ็ตทั้งหมด' : 'Yes, Reset All'}
                             </button>
                             <button
                               type="button"
@@ -945,21 +1288,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                     </div>
                   )}
 
-                  {/* Search Bar for Registered Users */}
-                  {registeredUsers.length > 3 && (
-                    <div className="relative mb-3">
-                      <Search className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-[#74777f]" />
-                      <input
-                        type="text"
-                        value={userSearchQuery}
-                        onChange={(e) => setUserSearchQuery(e.target.value)}
-                        placeholder={language === 'th' ? 'ค้นหาชื่อ, ชื่อผู้ใช้, รหัสพนักงาน...' : 'Search registered users...'}
-                        className="w-full pl-8 pr-3 py-1.5 bg-slate-50 border border-[#c4c6cf] rounded-lg text-xs outline-hidden focus:border-[#0061a5] focus:bg-white"
-                      />
-                    </div>
-                  )}
-
-                  {/* User Action Feedback Toast */}
+                  {/* Toast Feedback */}
                   {userActionToast && (
                     <div className="mb-3 p-2.5 bg-emerald-50 text-emerald-900 border border-emerald-200 rounded-xl flex items-center gap-2 text-xs font-semibold animate-in fade-in duration-150">
                       <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
@@ -967,32 +1296,38 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                     </div>
                   )}
 
-                  {/* Registered Users List */}
-                  {filteredRegisteredUsers.length > 0 ? (
+                  {/* Staff & User Accounts List */}
+                  {filteredStaffAccounts.length > 0 ? (
                     <div className="space-y-3 max-h-96 overflow-y-auto pr-1">
-                      {filteredRegisteredUsers.map((u) => {
-                        const isPassVisible = visiblePasswords[u.username] || false;
-                        const isCopied = copiedUserPass === u.username;
+                      {filteredStaffAccounts.map((u) => {
+                        const accountKey = u.username || u.employeeId;
+                        const isPassVisible = visiblePasswords[accountKey] || false;
+                        const isCopied = copiedUserPass === accountKey;
                         const isConfirmingDelete = userToDelete === u.username;
+                        const isConfirmingReset = userToReset === u.employeeId;
                         const isUserAdmin = Boolean(u.isAdmin || (u.role && (u.role.includes('Admin') || u.role.includes('ผู้ดูแลระบบ'))));
                         const hasEditPermission = u.canEdit !== false;
 
                         return (
                           <div
-                            key={u.username}
+                            key={`${u.employeeId}_${u.username}`}
                             className={`p-3.5 rounded-xl border transition-all flex flex-col gap-3 ${
                               isUserAdmin 
                                 ? 'bg-gradient-to-br from-amber-50/60 to-white border-amber-200 shadow-2xs' 
-                                : 'bg-slate-50 hover:bg-[#f8fafc] border-slate-200'
+                                : u.isCustomized
+                                  ? 'bg-gradient-to-br from-emerald-50/30 to-white border-emerald-200 shadow-2xs'
+                                  : 'bg-slate-50 hover:bg-[#f8fafc] border-slate-200'
                             }`}
                           >
                             {/* User Header */}
-                            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
-                              <div className="flex items-center gap-2.5 min-w-0">
-                                <div className={`w-9 h-9 rounded-xl font-bold text-xs flex items-center justify-center shrink-0 shadow-2xs uppercase overflow-hidden ${
+                            <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-2.5">
+                              <div className="flex items-start gap-2.5 min-w-0">
+                                <div className={`w-9 h-9 rounded-xl font-bold text-xs flex items-center justify-center shrink-0 shadow-2xs uppercase overflow-hidden mt-0.5 ${
                                   isUserAdmin
                                     ? 'bg-gradient-to-br from-amber-500 to-amber-700 text-white ring-2 ring-amber-300'
-                                    : 'bg-gradient-to-br from-[#0061a5] to-[#002045] text-white'
+                                    : u.isCustomized
+                                      ? 'bg-gradient-to-br from-emerald-600 to-teal-800 text-white'
+                                      : 'bg-gradient-to-br from-[#0061a5] to-[#002045] text-white'
                                 }`}>
                                   {u.avatarUrl ? (
                                     <img src={u.avatarUrl} alt={u.name || u.username} className="w-full h-full object-cover" />
@@ -1004,12 +1339,30 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                                 </div>
                                 <div className="min-w-0">
                                   <div className="flex items-center gap-1.5 flex-wrap">
-                                    <span className="font-bold text-xs text-[#002045] truncate">
+                                    <span className="font-bold text-xs text-[#002045]">
                                       {u.name}
                                     </span>
+                                    {u.employeeId && (
+                                      <span className="text-[10px] font-mono text-slate-700 bg-slate-200/80 px-1.5 py-0.2 rounded font-bold">
+                                        รหัส {u.employeeId}
+                                      </span>
+                                    )}
                                     <span className="text-[10px] font-mono text-[#0061a5] bg-[#e1effe] px-1.5 py-0.2 rounded font-semibold">
                                       @{u.username}
                                     </span>
+
+                                    {/* Status Badge */}
+                                    {u.isCustomized ? (
+                                      <span className="inline-flex items-center gap-1 px-1.5 py-0.2 rounded-md bg-emerald-100 text-emerald-900 border border-emerald-300 text-[10px] font-extrabold">
+                                        <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                                        <span>{language === 'th' ? 'เปลี่ยน Username & Password แล้ว' : 'Credentials Updated'}</span>
+                                      </span>
+                                    ) : (
+                                      <span className="inline-flex items-center gap-1 px-1.5 py-0.2 rounded-md bg-slate-100 text-slate-600 border border-slate-300 text-[10px] font-medium">
+                                        <span>{language === 'th' ? 'ค่าเริ่มต้น (รหัสพนักงาน)' : 'Default ID Login'}</span>
+                                      </span>
+                                    )}
+
                                     {isUserAdmin && (
                                       <span className="inline-flex items-center gap-1 px-1.5 py-0.2 rounded-md bg-amber-100 text-amber-900 border border-amber-300 text-[10px] font-extrabold">
                                         <Crown className="w-3 h-3 text-amber-600 fill-amber-500" />
@@ -1017,62 +1370,149 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                                       </span>
                                     )}
                                   </div>
-                                  <div className="flex items-center gap-2 text-[10px] text-[#74777f] mt-0.5 flex-wrap">
+
+                                  <div className="flex items-center gap-2 text-[10px] text-[#74777f] mt-1 flex-wrap">
                                     <span className="font-semibold text-slate-700 bg-white px-1.5 py-0.2 rounded border border-slate-200">
-                                      {u.role || 'เจ้าหน้าที่ปฏิบัติการ'}
+                                      {u.role || 'พนักงานปฏิบัติการ'}
                                     </span>
                                     {u.lastLogin && (
-                                      <span>
-                                        {language === 'th' ? `ลงทะเบียน: ${u.lastLogin}` : `Reg: ${u.lastLogin}`}
+                                      <span className="text-slate-500">
+                                        {u.lastLogin}
                                       </span>
                                     )}
                                   </div>
                                 </div>
                               </div>
 
-                              {/* Right Action Icons: 1. Toggle Admin Role Icon Button & 2. Active/Delete */}
-                              <div className="flex items-center gap-2 self-end sm:self-center shrink-0">
-                                {/* 1. ไอคอนสำหรับปรับเป็นแอดมิน (Admin Status Toggle Button) */}
+                              {/* Right Action Icons: Edit / Admin Toggle / Reset */}
+                              <div className="flex items-center gap-1.5 self-end sm:self-center shrink-0">
+                                {/* Admin Edit Credentials Button */}
                                 <button
                                   type="button"
-                                  onClick={() => handleToggleAdminRole(u.username)}
-                                  className={`px-2.5 py-1 rounded-lg text-[11px] font-bold flex items-center gap-1.5 transition-all cursor-pointer shadow-2xs ${
+                                  onClick={() => {
+                                    setEditingEmployee({
+                                      originalUsername: u.username,
+                                      employeeId: u.employeeId || u.username,
+                                      name: u.name,
+                                      username: u.username,
+                                      password: u.password || u.employeeId || '',
+                                      role: u.role || 'พนักงานปฏิบัติการ',
+                                      isAdmin: Boolean(u.isAdmin),
+                                      canEdit: u.canEdit !== false
+                                    });
+                                    setShowEditEmpPass(false);
+                                  }}
+                                  className="px-2 py-1 bg-white hover:bg-slate-100 text-[#0061a5] hover:text-[#002045] border border-slate-300 rounded-lg text-[11px] font-bold flex items-center gap-1 cursor-pointer transition-colors shadow-2xs"
+                                  title={language === 'th' ? 'แก้ไข Username & Password' : 'Edit Credentials'}
+                                >
+                                  <Pencil className="w-3 h-3" />
+                                  <span>{language === 'th' ? 'แก้ไข' : 'Edit'}</span>
+                                </button>
+
+                                {/* Admin Status Toggle Button */}
+                                <button
+                                  type="button"
+                                  onClick={() => handleToggleAdminRole(u)}
+                                  className={`px-2 py-1 rounded-lg text-[11px] font-bold flex items-center gap-1 transition-all cursor-pointer shadow-2xs ${
                                     isUserAdmin
-                                      ? 'bg-amber-500 hover:bg-amber-600 text-white border border-amber-600 active:scale-95'
-                                      : 'bg-white hover:bg-amber-50 text-slate-700 hover:text-amber-900 border border-slate-300 hover:border-amber-300 active:scale-95'
+                                      ? 'bg-amber-500 hover:bg-amber-600 text-white border border-amber-600'
+                                      : 'bg-white hover:bg-amber-50 text-slate-700 hover:text-amber-900 border border-slate-300 hover:border-amber-300'
                                   }`}
                                   title={
                                     isUserAdmin
-                                      ? (language === 'th' ? 'สถานะ: แอดมิน (คลิกเพื่อเปลี่ยนเป็นสมาชิกทั่วไป)' : 'Role: Admin (Click to demote to Member)')
-                                      : (language === 'th' ? 'คลิกไอคอนนี้เพื่อปรับสิทธิ์เป็นแอดมิน' : 'Click to promote this user to Admin')
+                                      ? (language === 'th' ? 'คลิกเพื่อลดสิทธิ์เป็นสมาชิกทั่วไป' : 'Demote to Member')
+                                      : (language === 'th' ? 'คลิกเพื่อตั้งเป็นแอดมิน' : 'Make Admin')
                                   }
                                 >
                                   {isUserAdmin ? (
                                     <>
-                                      <Crown className="w-3.5 h-3.5 fill-amber-100 text-amber-100" />
-                                      <span>{language === 'th' ? 'แอดมิน (Admin)' : 'Admin'}</span>
+                                      <Crown className="w-3 h-3 fill-amber-100 text-amber-100" />
+                                      <span>{language === 'th' ? 'แอดมิน' : 'Admin'}</span>
                                     </>
                                   ) : (
                                     <>
-                                      <Shield className="w-3.5 h-3.5 text-slate-500 group-hover:text-amber-600" />
-                                      <span>{language === 'th' ? 'ปรับเป็นแอดมิน' : 'Make Admin'}</span>
+                                      <Shield className="w-3 h-3 text-slate-500" />
+                                      <span>{language === 'th' ? 'ตั้งแอดมิน' : 'Admin'}</span>
                                     </>
                                   )}
                                 </button>
 
-                                <button
-                                  type="button"
-                                  onClick={() => setUserToDelete(isConfirmingDelete ? null : u.username)}
-                                  className="p-1 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-md transition-colors cursor-pointer"
-                                  title={language === 'th' ? 'ลบ/เพิกถอนสิทธิ์' : 'Delete user access'}
-                                >
-                                  <Trash2 className="w-3.5 h-3.5" />
-                                </button>
+                                {/* Reset to Default Button (if customized) */}
+                                {u.isCustomized && (
+                                  <button
+                                    type="button"
+                                    onClick={() => setUserToReset(isConfirmingReset ? null : u.employeeId)}
+                                    className="p-1 text-slate-400 hover:text-amber-700 hover:bg-amber-50 rounded-md transition-colors cursor-pointer"
+                                    title={language === 'th' ? 'รีเซ็ตกลับเป็นรหัสพนักงานเริ่มต้น' : 'Reset to default employee ID'}
+                                  >
+                                    <RotateCcw className="w-3.5 h-3.5" />
+                                  </button>
+                                )}
+
+                                {/* Delete Custom Record */}
+                                {u.isCustomized && (
+                                  <button
+                                    type="button"
+                                    onClick={() => setUserToDelete(isConfirmingDelete ? null : u.username)}
+                                    className="p-1 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-md transition-colors cursor-pointer"
+                                    title={language === 'th' ? 'ลบข้อมูลกำหนดเอง' : 'Delete custom user access'}
+                                  >
+                                    <Trash2 className="w-3.5 h-3.5" />
+                                  </button>
+                                )}
                               </div>
                             </div>
 
-                            {/* 2. ตัวเลือกให้เข้าสิทธิ์การแก้ไขข้อมูล (Edit Data Permissions Controls) */}
-                            <div className="pt-2.5 border-t border-slate-200/80">
+                            {/* Credentials Inspection Bar (Username & Password) */}
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 bg-slate-100/70 p-2 rounded-xl border border-slate-200 text-[11px]">
+                              {/* Username Info */}
+                              <div className="flex items-center justify-between bg-white px-2.5 py-1.5 rounded-lg border border-slate-200">
+                                <div className="flex items-center gap-1.5 truncate">
+                                  <span className="text-[#74777f] font-medium">{language === 'th' ? 'ชื่อผู้ใช้:' : 'Username:'}</span>
+                                  <span className="font-mono font-bold text-[#0061a5] truncate">@{u.username}</span>
+                                </div>
+                                <button
+                                  type="button"
+                                  onClick={() => handleCopyUserPassword(`user_${accountKey}`, u.username)}
+                                  className="text-[10px] text-slate-500 hover:text-[#0061a5] px-1 py-0.5 hover:bg-slate-50 rounded cursor-pointer shrink-0"
+                                  title="Copy username"
+                                >
+                                  {copiedUserPass === `user_${accountKey}` ? (language === 'th' ? 'คัดลอกแล้ว' : 'Copied') : (language === 'th' ? 'คัดลอก' : 'Copy')}
+                                </button>
+                              </div>
+
+                              {/* Password Info with Eye Toggle */}
+                              <div className="flex items-center justify-between bg-white px-2.5 py-1.5 rounded-lg border border-slate-200">
+                                <div className="flex items-center gap-1.5 truncate">
+                                  <Lock className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                                  <span className="text-[#74777f] font-medium">{language === 'th' ? 'รหัสผ่าน:' : 'Password:'}</span>
+                                  <span className="font-mono font-bold text-[#002045] truncate">
+                                    {isPassVisible ? u.password : '••••••••'}
+                                  </span>
+                                </div>
+                                <div className="flex items-center gap-1 shrink-0">
+                                  <button
+                                    type="button"
+                                    onClick={() => handleToggleUserPassword(accountKey)}
+                                    className="p-1 text-slate-500 hover:text-[#002045] rounded-md hover:bg-slate-100 cursor-pointer"
+                                    title={isPassVisible ? 'Hide' : 'Show'}
+                                  >
+                                    {isPassVisible ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5 text-slate-500" />}
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleCopyUserPassword(accountKey, u.password)}
+                                    className="px-1.5 py-0.5 text-[10px] font-semibold text-[#0061a5] hover:bg-[#f0f7ff] rounded cursor-pointer"
+                                    title="Copy password"
+                                  >
+                                    {isCopied ? (language === 'th' ? 'คัดลอกแล้ว' : 'Copied') : (language === 'th' ? 'คัดลอก' : 'Copy')}
+                                  </button>
+                                </div>
+                              </div>
+                            </div>
+
+                            {/* Data Edit Permissions Controls */}
+                            <div className="pt-2 border-t border-slate-200/80">
                               <div className={`p-2.5 rounded-xl border transition-colors ${
                                 hasEditPermission 
                                   ? 'bg-white border-emerald-200/80 shadow-2xs' 
@@ -1114,7 +1554,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                                       <input
                                         type="checkbox"
                                         checked={hasEditPermission}
-                                        onChange={() => handleToggleEditPermission(u.username)}
+                                        onChange={() => handleToggleEditPermission(u)}
                                         className="sr-only peer"
                                       />
                                       <div className="w-9 h-5 bg-slate-300 peer-focus:outline-hidden rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-[#0061a5]"></div>
@@ -1132,7 +1572,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                                       type="checkbox"
                                       checked={u.permissions?.canEditData !== false && hasEditPermission}
                                       disabled={!hasEditPermission}
-                                      onChange={(e) => handleUpdateGranularPermission(u.username, 'canEditData', e.target.checked)}
+                                      onChange={(e) => handleUpdateGranularPermission(u, 'canEditData', e.target.checked)}
                                       className="rounded text-[#0061a5] focus:ring-0 w-3.5 h-3.5 cursor-pointer"
                                     />
                                     <span className={!hasEditPermission ? 'text-slate-400' : 'text-slate-700 font-medium'}>
@@ -1144,7 +1584,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                                       type="checkbox"
                                       checked={u.permissions?.canManageOrders !== false && hasEditPermission}
                                       disabled={!hasEditPermission}
-                                      onChange={(e) => handleUpdateGranularPermission(u.username, 'canManageOrders', e.target.checked)}
+                                      onChange={(e) => handleUpdateGranularPermission(u, 'canManageOrders', e.target.checked)}
                                       className="rounded text-[#0061a5] focus:ring-0 w-3.5 h-3.5 cursor-pointer"
                                     />
                                     <span className={!hasEditPermission ? 'text-slate-400' : 'text-slate-700 font-medium'}>
@@ -1156,7 +1596,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                                       type="checkbox"
                                       checked={Boolean(u.permissions?.canDeleteData && hasEditPermission)}
                                       disabled={!hasEditPermission}
-                                      onChange={(e) => handleUpdateGranularPermission(u.username, 'canDeleteData', e.target.checked)}
+                                      onChange={(e) => handleUpdateGranularPermission(u, 'canDeleteData', e.target.checked)}
                                       className="rounded text-[#0061a5] focus:ring-0 w-3.5 h-3.5 cursor-pointer"
                                     />
                                     <span className={!hasEditPermission ? 'text-slate-400' : 'text-slate-700 font-medium'}>
@@ -1167,43 +1607,36 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                               </div>
                             </div>
 
-                            {/* Credentials audit info */}
-                            <div className="flex items-center justify-between pt-1 text-[11px] bg-slate-100/60 p-2 rounded-lg border border-slate-200">
-                              <div className="flex items-center gap-2">
-                                <Lock className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-                                <span className="text-[#74777f] font-medium">
-                                  {language === 'th' ? 'รหัสผ่าน:' : 'Password:'}
+                            {/* Reset Confirmation */}
+                            {isConfirmingReset && (
+                              <div className="p-2.5 bg-amber-50 rounded-lg border border-amber-200 flex items-center justify-between gap-2 animate-in fade-in duration-100">
+                                <span className="text-[11px] font-bold text-amber-900">
+                                  {language === 'th' ? `รีเซ็ต ${u.name} กลับเป็นรหัสเริ่มต้น (รหัสพนักงาน: ${u.employeeId})?` : `Reset ${u.name} credentials?`}
                                 </span>
-                                <span className="font-mono font-bold text-[#002045]">
-                                  {isPassVisible ? u.password : '••••••••'}
-                                </span>
+                                <div className="flex items-center gap-1.5">
+                                  <button
+                                    type="button"
+                                    onClick={() => handleResetToDefault(u.employeeId, u.name)}
+                                    className="px-2.5 py-1 bg-amber-600 hover:bg-amber-700 text-white rounded text-[10px] font-bold cursor-pointer"
+                                  >
+                                    {language === 'th' ? 'ยืนยันรีเซ็ต' : 'Confirm'}
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => setUserToReset(null)}
+                                    className="px-2 py-1 bg-white text-slate-700 border border-slate-300 rounded text-[10px] font-semibold hover:bg-slate-100 cursor-pointer"
+                                  >
+                                    {language === 'th' ? 'ยกเลิก' : 'Cancel'}
+                                  </button>
+                                </div>
                               </div>
-
-                              <div className="flex items-center gap-1">
-                                <button
-                                  type="button"
-                                  onClick={() => handleToggleUserPassword(u.username)}
-                                  className="p-1 text-slate-500 hover:text-[#002045] rounded-md hover:bg-slate-200 cursor-pointer"
-                                  title={isPassVisible ? 'Hide' : 'Show'}
-                                >
-                                  {isPassVisible ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5 text-slate-500" />}
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => handleCopyUserPassword(u.username, u.password)}
-                                  className="px-2 py-0.5 text-[10px] font-semibold text-[#0061a5] hover:bg-[#f0f7ff] rounded-md transition-colors flex items-center gap-1 cursor-pointer"
-                                >
-                                  <Copy className="w-3 h-3" />
-                                  <span>{isCopied ? (language === 'th' ? 'คัดลอกแล้ว' : 'Copied') : (language === 'th' ? 'คัดลอก' : 'Copy')}</span>
-                                </button>
-                              </div>
-                            </div>
+                            )}
 
                             {/* Delete User Confirmation */}
                             {isConfirmingDelete && (
                               <div className="p-2.5 bg-rose-50 rounded-lg border border-rose-200 flex items-center justify-between gap-2 animate-in fade-in duration-100">
                                 <span className="text-[11px] font-bold text-rose-900">
-                                  {language === 'th' ? `ลบสิทธิ์ผู้ใช้ @${u.username}?` : `Delete @${u.username}?`}
+                                  {language === 'th' ? `ลบการตั้งค่ากำหนดเองของ @${u.username}?` : `Delete custom @${u.username}?`}
                                 </span>
                                 <div className="flex items-center gap-1.5">
                                   <button
@@ -1233,13 +1666,145 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                         <UserCheck className="w-5 h-5" />
                       </div>
                       <h5 className="font-bold text-xs text-[#002045] mb-1">
-                        {language === 'th' ? 'ยังไม่มีผู้ลงทะเบียนใหม่ในระบบ' : 'No Registered Users Yet'}
+                        {language === 'th' ? 'ไม่พบข้อมูลตามเงื่อนไขที่ค้นหา' : 'No matching staff accounts found'}
                       </h5>
                       <p className="text-[11px] text-[#74777f] max-w-md mx-auto">
                         {language === 'th'
-                          ? 'เมื่อมีผู้ใช้งานลงทะเบียนผ่านหน้าต่าง "ลงทะเบียน" (Register) ข้อมูลบัญชี รหัสพนักงาน และสิทธิ์การเข้าถึงจะถูกส่งเข้ามาแสดงและจัดการในส่วนความปลอดภัยนี้โดยอัตโนมัติแบบเรียลไทม์'
-                          : 'When users create an account through the Registration portal, their credentials and access rights will appear here automatically in real-time.'}
+                          ? 'ลองค้นหาด้วยคำอื่น หรือเลือกแท็บ "ทั้งหมด" เพื่อดูรายชื่อพนักงานและบัญชีผู้ใช้งานทั้งหมด'
+                          : 'Try adjusting your search query or selecting the "All" tab to view all accounts.'}
                       </p>
+                    </div>
+                  )}
+
+                  {/* Admin Edit Credentials Modal Dialog */}
+                  {editingEmployee && (
+                    <div className="fixed inset-0 z-60 bg-black/50 backdrop-blur-2xs flex items-center justify-center p-4">
+                      <div className="w-full max-w-md bg-white rounded-2xl shadow-2xl border border-slate-200 overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+                        <div className="p-4 bg-[#002045] text-white flex items-center justify-between">
+                          <div className="flex items-center gap-2">
+                            <KeyRound className="w-4 h-4 text-[#73c2fb]" />
+                            <h3 className="font-bold text-xs text-white">
+                              {language === 'th' ? `แก้ไขข้อมูลบัญชี ${editingEmployee.name}` : `Edit Credentials: ${editingEmployee.name}`}
+                            </h3>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => setEditingEmployee(null)}
+                            className="text-slate-300 hover:text-white p-1 rounded-lg hover:bg-white/10 cursor-pointer"
+                          >
+                            <X className="w-4 h-4" />
+                          </button>
+                        </div>
+
+                        <form onSubmit={handleSaveEditedEmployee} className="p-4 space-y-3">
+                          <div>
+                            <label className="block text-[11px] font-bold text-[#002045] mb-1">
+                              {language === 'th' ? 'ชื่อ-นามสกุล' : 'Full Name'}
+                            </label>
+                            <input
+                              type="text"
+                              value={editingEmployee.name}
+                              onChange={(e) => setEditingEmployee({ ...editingEmployee, name: e.target.value })}
+                              required
+                              className="w-full px-3 py-1.5 bg-slate-50 border border-slate-300 rounded-lg text-xs outline-hidden focus:border-[#0061a5] focus:bg-white"
+                            />
+                          </div>
+
+                          <div className="grid grid-cols-2 gap-2">
+                            <div>
+                              <label className="block text-[11px] font-bold text-[#002045] mb-1">
+                                {language === 'th' ? 'รหัสพนักงาน' : 'Employee ID'}
+                              </label>
+                              <input
+                                type="text"
+                                value={editingEmployee.employeeId}
+                                disabled
+                                className="w-full px-3 py-1.5 bg-slate-100 border border-slate-200 rounded-lg text-xs font-mono text-slate-600 cursor-not-allowed"
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-[11px] font-bold text-[#002045] mb-1">
+                                {language === 'th' ? 'ชื่อผู้ใช้ (Username)' : 'Username'}
+                              </label>
+                              <input
+                                type="text"
+                                value={editingEmployee.username}
+                                onChange={(e) => setEditingEmployee({ ...editingEmployee, username: e.target.value })}
+                                required
+                                className="w-full px-3 py-1.5 bg-slate-50 border border-slate-300 rounded-lg text-xs font-mono text-[#0061a5] font-bold outline-hidden focus:border-[#0061a5] focus:bg-white"
+                              />
+                            </div>
+                          </div>
+
+                          <div>
+                            <label className="block text-[11px] font-bold text-[#002045] mb-1">
+                              {language === 'th' ? 'รหัสผ่าน (Password)' : 'Password'}
+                            </label>
+                            <div className="relative">
+                              <input
+                                type={showEditEmpPass ? 'text' : 'password'}
+                                value={editingEmployee.password}
+                                onChange={(e) => setEditingEmployee({ ...editingEmployee, password: e.target.value })}
+                                required
+                                className="w-full pl-3 pr-10 py-1.5 bg-slate-50 border border-slate-300 rounded-lg text-xs font-mono font-bold outline-hidden focus:border-[#0061a5] focus:bg-white"
+                              />
+                              <button
+                                type="button"
+                                onClick={() => setShowEditEmpPass(!showEditEmpPass)}
+                                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-700 cursor-pointer"
+                              >
+                                {showEditEmpPass ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                              </button>
+                            </div>
+                          </div>
+
+                          <div>
+                            <label className="block text-[11px] font-bold text-[#002045] mb-1">
+                              {language === 'th' ? 'แผนก/ตำแหน่ง' : 'Department/Role'}
+                            </label>
+                            <input
+                              type="text"
+                              value={editingEmployee.role}
+                              onChange={(e) => setEditingEmployee({ ...editingEmployee, role: e.target.value })}
+                              className="w-full px-3 py-1.5 bg-slate-50 border border-slate-300 rounded-lg text-xs outline-hidden focus:border-[#0061a5] focus:bg-white"
+                            />
+                          </div>
+
+                          <div className="pt-2 border-t border-slate-100 flex items-center justify-between">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setEditingEmployee({
+                                  ...editingEmployee,
+                                  username: editingEmployee.employeeId,
+                                  password: editingEmployee.employeeId
+                                });
+                              }}
+                              className="px-2.5 py-1 text-[10px] font-semibold text-amber-700 hover:bg-amber-50 border border-amber-300 rounded-lg flex items-center gap-1 cursor-pointer"
+                              title="Reset fields to Employee ID"
+                            >
+                              <RotateCcw className="w-3 h-3" />
+                              <span>{language === 'th' ? 'ใส่ค่าเริ่มต้น (รหัสพนักงาน)' : 'Set Default ID'}</span>
+                            </button>
+
+                            <div className="flex items-center gap-2">
+                              <button
+                                type="button"
+                                onClick={() => setEditingEmployee(null)}
+                                className="px-3 py-1.5 text-xs text-slate-600 hover:bg-slate-100 rounded-lg font-semibold cursor-pointer"
+                              >
+                                {language === 'th' ? 'ยกเลิก' : 'Cancel'}
+                              </button>
+                              <button
+                                type="submit"
+                                className="px-4 py-1.5 bg-[#0061a5] hover:bg-[#002045] text-white text-xs font-bold rounded-lg shadow-sm cursor-pointer"
+                              >
+                                {language === 'th' ? 'บันทึกการแก้ไข' : 'Save Changes'}
+                              </button>
+                            </div>
+                          </div>
+                        </form>
+                      </div>
                     </div>
                   )}
                 </div>

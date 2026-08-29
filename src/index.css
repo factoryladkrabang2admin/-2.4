@@ -584,3 +584,24 @@
   animation: breadSpinWobble 4s ease-in-out infinite;
 }
 
+@keyframes avatarBounce {
+  0%, 100% {
+    transform: translateY(0) scale(1);
+  }
+  50% {
+    transform: translateY(-2px) scale(1.02);
+  }
+}
+
+.animate-avatar-bounce {
+  animation: avatarBounce 2s ease-in-out infinite;
+}
+
+.rotate-y-90 {
+  transform: rotateY(90deg);
+}
+
+.rotate-y-0 {
+  transform: rotateY(0deg);
+}
+

@@ -6,7 +6,8 @@ import {
   DEFAULT_ADMIN_USER,
   DEFAULT_GUEST_USER,
   AdminUserAccount,
-  isUserAdminOrSupervisor
+  isUserAdminOrSupervisor,
+  saveUpdatedUserCredentials
 } from './data/mockData';
 import { INITIAL_LAUNDRY_ORDERS } from './data/mockLaundryData';
 import { Sidebar } from './components/Sidebar';
@@ -83,21 +84,7 @@ export default function App() {
 
   const handleUpdateCurrentUser = (updated: AdminUserAccount) => {
     setCurrentUser(updated);
-    try {
-      localStorage.setItem('proworkflow_current_user', JSON.stringify(updated));
-      if (updated.username.toLowerCase() === 'reizosischen') {
-        localStorage.setItem('proworkflow_admin_auth', JSON.stringify(updated));
-      } else {
-        const storedUsers = realtimeHub.getStoredRegisteredUsers();
-        const updatedList = storedUsers.map(u => 
-          u.username.toLowerCase() === updated.username.toLowerCase() ? updated : u
-        );
-        realtimeHub.saveRegisteredUsers(updatedList);
-        localStorage.setItem('proworkflow_registered_users', JSON.stringify(updatedList));
-      }
-    } catch {
-      // storage
-    }
+    saveUpdatedUserCredentials(updated);
   };
 
   // Entities State with persistent Real-time initial values

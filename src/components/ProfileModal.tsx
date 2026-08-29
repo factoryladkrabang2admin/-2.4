@@ -17,7 +17,7 @@ import {
   RefreshCw,
   Link as LinkIcon
 } from 'lucide-react';
-import { CURRENT_USER_AVATAR, DEFAULT_ADMIN_USER, AdminUserAccount } from '../data/mockData';
+import { CURRENT_USER_AVATAR, DEFAULT_ADMIN_USER, AdminUserAccount, saveUpdatedUserCredentials } from '../data/mockData';
 import { useLanguage } from '../contexts/LanguageContext';
 import { AVATAR_PRESETS } from '../data/avatarPresets';
 
@@ -100,6 +100,7 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
       email: userAccount.email || '',
       role: role.trim() || userAccount.role,
       password: password || userAccount.password,
+      employeeId: userAccount.employeeId,
       avatarUrl: avatarUrl || undefined,
       lastLogin: 'Active Session',
       isAdmin: userAccount.isAdmin,
@@ -107,14 +108,9 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
       permissions: userAccount.permissions,
     };
     setUserAccount(updated);
+    saveUpdatedUserCredentials(updated);
     if (onUpdateUser) {
       onUpdateUser(updated);
-    } else {
-      try {
-        localStorage.setItem('proworkflow_admin_auth', JSON.stringify(updated));
-      } catch {
-        // storage error
-      }
     }
     setSaved(true);
     setTimeout(() => {
@@ -284,18 +280,77 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
             )}
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="block font-semibold text-[#1a1c1c] mb-1">
-                {language === 'th' ? 'ชื่อผู้ใช้ (Username)' : 'Username'}
-              </label>
-              <input
-                type="text"
-                value={username}
-                onChange={(e) => setUsername(e.target.value)}
-                className="w-full px-3 py-2 border border-[#c4c6cf] rounded-lg text-xs font-mono font-bold text-[#002045] outline-hidden focus:border-[#0061a5] bg-slate-50"
-              />
+          {/* Account Credentials Section (Username & Password) */}
+          <div className="p-4 bg-sky-50/60 border border-sky-200/80 rounded-2xl space-y-3.5">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <KeyRound className="w-4 h-4 text-[#0061a5]" />
+                <h4 className="font-bold text-xs text-[#002045]">
+                  {language === 'th' ? 'ข้อมูลการเข้าสู่ระบบ (Username & Password)' : 'Login Credentials'}
+                </h4>
+              </div>
+              {userAccount.employeeId && (
+                <span className="text-[11px] font-mono font-bold bg-white px-2 py-0.5 rounded-md border border-sky-200 text-[#0061a5]">
+                  {language === 'th' ? `รหัสพนักงาน: ${userAccount.employeeId}` : `ID: ${userAccount.employeeId}`}
+                </span>
+              )}
             </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <label className="block font-bold text-[#1a1c1c] mb-1">
+                  {language === 'th' ? 'ชื่อผู้ใช้ (Username)' : 'Username'} <span className="text-rose-500">*</span>
+                </label>
+                <div className="relative">
+                  <div className="absolute inset-y-0 left-0 pl-2.5 flex items-center pointer-events-none text-[#74777f]">
+                    <User className="w-3.5 h-3.5" />
+                  </div>
+                  <input
+                    type="text"
+                    value={username}
+                    onChange={(e) => setUsername(e.target.value)}
+                    required
+                    placeholder={userAccount.employeeId || 'username'}
+                    className="w-full pl-8 pr-3 py-2 border border-[#c4c6cf] rounded-xl text-xs font-mono font-bold text-[#002045] outline-hidden focus:border-[#0061a5] focus:ring-2 focus:ring-[#0061a5]/20 bg-white"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block font-bold text-[#1a1c1c] mb-1">
+                  {language === 'th' ? 'รหัสผ่าน (Password)' : 'Password'} <span className="text-rose-500">*</span>
+                </label>
+                <div className="relative">
+                  <div className="absolute inset-y-0 left-0 pl-2.5 flex items-center pointer-events-none text-[#74777f]">
+                    <Lock className="w-3.5 h-3.5" />
+                  </div>
+                  <input
+                    type={showPassword ? 'text' : 'password'}
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    required
+                    placeholder="••••••••"
+                    className="w-full pl-8 pr-9 py-2 border border-[#c4c6cf] rounded-xl text-xs font-mono font-bold tracking-wider text-[#002045] outline-hidden focus:border-[#0061a5] focus:ring-2 focus:ring-[#0061a5]/20 bg-white"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword(!showPassword)}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 text-[#74777f] hover:text-[#002045] p-1 cursor-pointer"
+                    title={showPassword ? 'Hide password' : 'Show password'}
+                  >
+                    {showPassword ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                  </button>
+                </div>
+              </div>
+            </div>
+            <p className="text-[11px] text-slate-500">
+              {language === 'th' 
+                ? '💡 สามารถเปลี่ยนชื่อผู้ใช้ (Username) และรหัสผ่าน (Password) ได้ตลอดเวลา และกดบันทึกข้อมูลด้านล่าง'
+                : '💡 You can customize your username and password anytime and save below.'}
+            </p>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
               <label className="block font-semibold text-[#1a1c1c] mb-1">
                 {language === 'th' ? 'ชื่อที่แสดง (Display Name)' : 'Display Name'}
@@ -304,43 +359,20 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
                 type="text"
                 value={name}
                 onChange={(e) => setName(e.target.value)}
-                className="w-full px-3 py-2 border border-[#c4c6cf] rounded-lg text-xs outline-hidden focus:border-[#0061a5]"
+                className="w-full px-3 py-2 border border-[#c4c6cf] rounded-xl text-xs outline-hidden focus:border-[#0061a5] bg-white font-medium"
               />
             </div>
-          </div>
-
-          <div>
-            <label className="block font-semibold text-[#1a1c1c] mb-1">
-              {language === 'th' ? 'รหัสผ่านผู้ใช้งาน (Password)' : 'Password'}
-            </label>
-            <div className="relative">
+            <div>
+              <label className="block font-semibold text-[#1a1c1c] mb-1">
+                {language === 'th' ? 'ตำแหน่ง / แผนก (Role / Department)' : 'Role / Department'}
+              </label>
               <input
-                type={showPassword ? 'text' : 'password'}
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                className="w-full pl-3 pr-10 py-2 border border-[#c4c6cf] rounded-lg text-xs font-mono font-bold tracking-wider text-[#002045] outline-hidden focus:border-[#0061a5] bg-amber-50/40"
+                type="text"
+                value={role}
+                onChange={(e) => setRole(e.target.value)}
+                className="w-full px-3 py-2 border border-[#c4c6cf] rounded-xl text-xs outline-hidden focus:border-[#0061a5] bg-white font-medium"
               />
-              <button
-                type="button"
-                onClick={() => setShowPassword(!showPassword)}
-                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[#74777f] hover:text-[#002045] p-1 cursor-pointer"
-                title={showPassword ? 'Hide password' : 'Show password'}
-              >
-                {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-              </button>
             </div>
-          </div>
-
-          <div>
-            <label className="block font-semibold text-[#1a1c1c] mb-1">
-              {language === 'th' ? 'ตำแหน่ง / บทบาท (Role)' : 'Role'}
-            </label>
-            <input
-              type="text"
-              value={role}
-              onChange={(e) => setRole(e.target.value)}
-              className="w-full px-3 py-2 border border-[#c4c6cf] rounded-lg text-xs outline-hidden focus:border-[#0061a5]"
-            />
           </div>
 
           <div className="pt-3 border-t border-[#e2e8f0] flex items-center justify-between gap-2 shrink-0">

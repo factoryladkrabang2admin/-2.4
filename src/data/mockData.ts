@@ -1,4 +1,5 @@
 import { Project, TeamMember, ActivityItem, ReportItem, AnalyticsData } from '../types';
+import { realtimeHub } from '../services/realtimeService';
 
 export const INITIAL_PROJECTS: Project[] = [];
 
@@ -38,7 +39,7 @@ export const CURRENT_USER_AVATAR = 'https://lh3.googleusercontent.com/aida-publi
 export interface AdminUserAccount {
   username: string;
   name: string;
-  email: string;
+  email?: string;
   role: string;
   password: string;
   employeeId?: string;
@@ -187,4 +188,214 @@ export function isUserAdminOrSupervisor(user?: AdminUserAccount | null, isAuthen
   }
 
   return false;
+}
+
+export interface StaffEmployeeInfo {
+  employeeId: string;
+  name: string;
+  department: string;
+}
+
+export const INITIAL_OT_STAFF_EMPLOYEES: StaffEmployeeInfo[] = [
+  { employeeId: '358167', name: 'สงกรานต์ สุริยแสง', department: 'แม่บ้าน' },
+  { employeeId: '363146', name: 'ณัฐภัทร ละลี', department: 'แม่บ้าน' },
+  { employeeId: '359110', name: 'พรนิภา บุติพันคา', department: 'แม่บ้าน' },
+  { employeeId: '339858', name: 'ชมภู ยาหยี', department: 'ธุรการ' },
+  { employeeId: '716767', name: 'สุริยา เวชพันธ์', department: 'ธุรการ' },
+  { employeeId: '714314', name: 'นพเก้า ทองปลิว', department: 'ธุรการ' },
+  { employeeId: '720592', name: 'พงศกร พิกุลทอง', department: 'ธุรการ' },
+];
+
+export function getAllOtStaffList(): StaffEmployeeInfo[] {
+  const staffMap = new Map<string, StaffEmployeeInfo>();
+
+  // 1. Initial known OT staff from spreadsheet
+  INITIAL_OT_STAFF_EMPLOYEES.forEach((emp) => {
+    staffMap.set(emp.employeeId.toUpperCase(), emp);
+  });
+
+  // 2. Add from cached / live OT records if available
+  try {
+    const rawOt = localStorage.getItem('proworkflow_ot_records_cache_v2');
+    if (rawOt) {
+      const records = JSON.parse(rawOt);
+      if (Array.isArray(records)) {
+        records.forEach((r: any) => {
+          const empId = (r.employeeId || '').trim();
+          if (empId && empId !== '-' && empId !== '#N/A' && !staffMap.has(empId.toUpperCase())) {
+            staffMap.set(empId.toUpperCase(), {
+              employeeId: empId.toUpperCase(),
+              name: (r.employeeName || '').trim() || `พนักงาน ${empId}`,
+              department: (r.department || '').trim() || 'ทั่วไป',
+            });
+          }
+        });
+      }
+    }
+  } catch {
+    // ignore
+  }
+
+  return Array.from(staffMap.values());
+}
+
+export function saveUpdatedUserCredentials(updatedUser: AdminUserAccount): void {
+  try {
+    localStorage.setItem('proworkflow_current_user', JSON.stringify(updatedUser));
+
+    if (updatedUser.username.toLowerCase() === 'reizosischen') {
+      localStorage.setItem('proworkflow_admin_auth', JSON.stringify(updatedUser));
+      realtimeHub.broadcast('SYNC_ALL', { entity: 'admin_auth', user: updatedUser });
+      return;
+    }
+
+    let list: AdminUserAccount[] = realtimeHub.getStoredRegisteredUsers();
+    if (!Array.isArray(list) || list.length === 0) {
+      const saved = localStorage.getItem('proworkflow_registered_users');
+      if (saved) {
+        try {
+          const parsed = JSON.parse(saved);
+          if (Array.isArray(parsed)) list = parsed;
+        } catch {}
+      }
+    }
+
+    const empId = (updatedUser.employeeId || '').toUpperCase();
+    const username = (updatedUser.username || '').toLowerCase();
+
+    const filtered = list.filter((u) => {
+      const uEmpId = (u.employeeId || '').toUpperCase();
+      const uUser = (u.username || '').toLowerCase();
+      if (empId && uEmpId && empId === uEmpId) return false;
+      if (username && uUser && username === uUser) return false;
+      return true;
+    });
+
+    filtered.push(updatedUser);
+    localStorage.setItem('proworkflow_registered_users', JSON.stringify(filtered));
+    realtimeHub.saveRegisteredUsers(filtered);
+    realtimeHub.broadcast('USER_REGISTERED', updatedUser);
+    realtimeHub.broadcast('SYNC_ALL', { entity: 'registered_users', updatedUser });
+
+    // Record audit activity log for admin visibility
+    const auditActivity = {
+      id: `act-cred-${Date.now()}`,
+      type: 'member_joined' as const,
+      user: updatedUser.name || updatedUser.username,
+      title: 'อัปเดตข้อมูลความปลอดภัย (Username/Password)',
+      highlightText: updatedUser.employeeId ? `[รหัส ${updatedUser.employeeId}]` : `@${updatedUser.username}`,
+      subtitle: `เปลี่ยนเป็น @${updatedUser.username} เรียบร้อยแล้ว`,
+      timestamp: 'เมื่อสักครู่',
+      badgeType: 'system' as const
+    };
+    realtimeHub.addActivity(auditActivity);
+  } catch (err) {
+    console.error('Error saving credentials:', err);
+  }
+}
+
+export function authenticateStaffOrAdmin(
+  inputUsername: string,
+  inputPass: string
+): { success: boolean; user?: AdminUserAccount; error?: 'INCORRECT_PASSWORD' | 'USER_NOT_FOUND' | 'EMPTY' } {
+  const cleanInputUser = inputUsername.trim().toLowerCase().replace(/^@/, '');
+  const pass = inputPass.trim();
+
+  if (!cleanInputUser || !pass) {
+    return { success: false, error: 'EMPTY' };
+  }
+
+  // 1. Super Admin (reizosischen)
+  let admin = DEFAULT_ADMIN_USER;
+  try {
+    const savedAdmin = localStorage.getItem('proworkflow_admin_auth');
+    if (savedAdmin) admin = JSON.parse(savedAdmin);
+  } catch {}
+
+  const adminUsername = (admin.username || 'reizosischen').toLowerCase().replace(/^@/, '').trim();
+  const isAdminMatch = cleanInputUser === 'reizosischen' || cleanInputUser === adminUsername;
+  if (isAdminMatch) {
+    const isPassOk = pass === (admin.password || '724754') || pass === '724754';
+    if (isPassOk) {
+      return { success: true, user: admin };
+    }
+    return { success: false, error: 'INCORRECT_PASSWORD' };
+  }
+
+  // 2. Mark Admin
+  const isMarkMatch = cleanInputUser === 'mark';
+  if (isMarkMatch) {
+    const isMarkPassOk = pass === '717681' || pass === (MARK_ADMIN_USER.password || '717681');
+    if (isMarkPassOk) {
+      return { success: true, user: MARK_ADMIN_USER };
+    }
+    return { success: false, error: 'INCORRECT_PASSWORD' };
+  }
+
+  // 3. Check customized stored user accounts (e.g. employee who changed password or username)
+  let customUsers: AdminUserAccount[] = [];
+  try {
+    const saved = localStorage.getItem('proworkflow_registered_users');
+    if (saved) {
+      const parsed = JSON.parse(saved);
+      if (Array.isArray(parsed)) customUsers = parsed;
+    }
+  } catch {}
+
+  const matchedCustomUser = customUsers.find((u) => {
+    const uUser = (u.username || '').toLowerCase().replace(/^@/, '').trim();
+    const uEmpId = (u.employeeId || '').toLowerCase().trim();
+    const uName = (u.name || '').toLowerCase().trim();
+    return uUser === cleanInputUser || (uEmpId && uEmpId === cleanInputUser) || (uName && uName === cleanInputUser);
+  });
+
+  if (matchedCustomUser) {
+    if (
+      matchedCustomUser.password === pass ||
+      matchedCustomUser.password.trim() === pass ||
+      (matchedCustomUser.employeeId && pass === matchedCustomUser.employeeId.trim())
+    ) {
+      return { success: true, user: matchedCustomUser };
+    }
+    return { success: false, error: 'INCORRECT_PASSWORD' };
+  }
+
+  // 4. Check OT Staff members (Default credentials: username = employeeId, password = employeeId)
+  const allStaff = getAllOtStaffList();
+  const matchedStaff = allStaff.find((s) => {
+    const sId = s.employeeId.toLowerCase().trim();
+    const sName = s.name.toLowerCase().trim();
+    return sId === cleanInputUser || sName === cleanInputUser;
+  });
+
+  if (matchedStaff) {
+    const defaultPass = matchedStaff.employeeId.trim();
+    if (
+      pass === defaultPass ||
+      pass.toLowerCase() === defaultPass.toLowerCase() ||
+      pass.toUpperCase() === defaultPass.toUpperCase()
+    ) {
+      const staffUser: AdminUserAccount = {
+        username: matchedStaff.employeeId,
+        name: matchedStaff.name,
+        email: `emp${matchedStaff.employeeId}@proworkflow.local`,
+        role: `พนักงานฝ่าย${matchedStaff.department} (รหัสพนักงาน: ${matchedStaff.employeeId})`,
+        employeeId: matchedStaff.employeeId,
+        password: matchedStaff.employeeId,
+        lastLogin: new Date().toLocaleDateString('th-TH'),
+        isAdmin: false,
+        canEdit: true,
+        permissions: {
+          canEditData: true,
+          canManageOrders: true,
+          canManageProjects: false,
+          canDeleteData: false,
+        },
+      };
+      return { success: true, user: staffUser };
+    }
+    return { success: false, error: 'INCORRECT_PASSWORD' };
+  }
+
+  return { success: false, error: 'USER_NOT_FOUND' };
 }

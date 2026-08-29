@@ -1751,6 +1751,20 @@ export const WORK_SCHEDULE_FALLBACK_CSV = `วัน,วันที่,รา�
 วันอังคาร,29/9/2026,ณัฐพร,สิทธิกร,ชมภู,สุริยา,พรนิภา,สุดารัตน์,นพเก้า,พงศกร,สงกรานต์,ยุพา,,,,,
 วันพุธ,30/9/2026,ณัฐพร,สิทธิกร,ชมภู,สุริยา,พรนิภา,สุดารัตน์,นพเก้า,พงศกร,สงกรานต์,ยุพา,,,,,`;
 
+export function getScheduleEmployeeDepartment(empName: string): string {
+  const clean = (empName || '').trim();
+  if (clean === 'ณัฐพร' || clean === 'สิทธิกร' || clean === 'ชมภู') {
+    return 'หัวหน้างาน';
+  }
+  if (clean === 'สุริยา' || clean === 'พงศกร' || clean === 'นพเก้า') {
+    return 'ธุรการ';
+  }
+  if (clean === 'พรนิภา' || clean === 'สุดารัตน์' || clean === 'สงกรานต์' || clean === 'ยุพา') {
+    return 'แม่บ้าน';
+  }
+  return 'ฝ่ายปฏิบัติการ';
+}
+
 export function convertSheetRowsToWorkSchedule(csvText: string): DailyWorkSchedule[] {
   if (!csvText || !csvText.trim()) return [];
 
@@ -1776,8 +1790,7 @@ export function convertSheetRowsToWorkSchedule(csvText: string): DailyWorkSchedu
     const empName = (line1[c] || '').trim();
     if (empName) {
       const shift = (line2[c] || '').trim() || (empName === 'ณัฐพร' || empName === 'สิทธิกร' ? '08.00 - 17.00' : '06.00 - 14.30');
-      let dept = 'ฝ่ายปฏิบัติการ';
-      if (empName === 'ณัฐพร' || empName === 'สิทธิกร') dept = 'ฝ่ายบริหาร/ธุรการ';
+      const dept = getScheduleEmployeeDepartment(empName);
       employeeColumns.push({
         colIndex: c,
         name: empName,
@@ -1829,7 +1842,7 @@ export function convertSheetRowsToWorkSchedule(csvText: string): DailyWorkSchedu
           const matchedEmp = employeeColumns.find(e => e.name === n);
           leaveEmployees.push({
             name: n,
-            department: matchedEmp ? matchedEmp.department : 'ฝ่ายปฏิบัติการ',
+            department: matchedEmp ? matchedEmp.department : getScheduleEmployeeDepartment(n),
             leaveType: lt.leaveType,
           });
         });

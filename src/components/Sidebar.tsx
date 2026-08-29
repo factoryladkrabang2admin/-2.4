@@ -15,9 +15,9 @@ import {
   BreadIcon, 
   BreadKind, 
   FloatingBreadParticles,
-  FarmhouseBreadIcon,
   CroissantIcon
 } from './BreadIcons';
+import { RotatingAvatar } from './RotatingAvatar';
 
 interface SidebarProps {
   currentTab: NavigationTab;
@@ -120,9 +120,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 onCloseMobile();
               }}
             >
-              {/* Farmhouse Bread Loaf Icon Container */}
-              <div className="relative w-12 h-12 rounded-2xl bg-white/95 p-1 flex items-center justify-center shrink-0 border-2 border-white/50 shadow-xl group-hover:scale-108 group-hover:-rotate-3 transition-all duration-300">
-                <FarmhouseBreadIcon size={38} className="animate-bread-bob" />
+              {/* Rotating Avatar Face Icon Container */}
+              <div className="relative shrink-0 flex items-center justify-center group-hover:scale-105 transition-all duration-300">
+                <RotatingAvatar size={44} />
               </div>
               <div className="min-w-0 flex-1">
                 <h1 className="text-base font-extrabold text-white tracking-tight leading-snug drop-shadow-md truncate" title={t.appName}>

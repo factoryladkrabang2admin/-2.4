@@ -1,17 +1,16 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import {
   CalendarDays,
-  Search,
   Filter,
   FileSpreadsheet,
   BarChart3,
   List,
   LayoutGrid,
   Calendar as CalendarIcon,
+  Columns3,
   CheckCircle2,
   Clock,
   User,
-  Building2,
   X,
   Sparkles,
   ChevronLeft,
@@ -19,7 +18,6 @@ import {
   Sun,
   Moon,
   CalendarCheck,
-  UserX,
   Plane,
   AlertTriangle,
   Briefcase
@@ -31,6 +29,11 @@ import {
   WORK_SCHEDULE_SHEET_URL
 } from '../services/googleSheetSyncService';
 import { AdminUserAccount, isUserAdminOrSupervisor } from '../data/mockData';
+import { WorkScheduleCalendarView } from './workSchedule/WorkScheduleCalendarView';
+import { WorkScheduleBoardView } from './workSchedule/WorkScheduleBoardView';
+import { WorkScheduleAnalyticsModal } from './workSchedule/WorkScheduleAnalyticsModal';
+import { WorkScheduleFilterModal } from './workSchedule/WorkScheduleFilterModal';
+import { WorkScheduleDetailModal } from './workSchedule/WorkScheduleDetailModal';
 
 const STORAGE_KEY = 'proworkflow_work_schedule_cache_v1';
 const BACKGROUND_POLL_INTERVAL_MS = 20000;
@@ -64,10 +67,10 @@ export const WorkScheduleView: React.FC<WorkScheduleViewProps> = ({
   const [selectedDay, setSelectedDay] = useState<string>('all');
   const [selectedMonth, setSelectedMonth] = useState<string>('all');
   const [selectedEmployee, setSelectedEmployee] = useState<string>('all');
-  const [selectedStatus, setSelectedStatus] = useState<string>('all'); // all, onDuty, leave, offDuty
+  const [selectedStatus, setSelectedStatus] = useState<string>('all'); // all, has_leave, weekend_only, weekday_only
 
-  // View mode
-  const [viewMode, setViewMode] = useState<'grid' | 'table' | 'calendar'>('grid');
+  // View mode - Default to 'calendar' as requested
+  const [viewMode, setViewMode] = useState<'calendar' | 'table' | 'grid' | 'board'>('calendar');
   const [selectedSchedule, setSelectedSchedule] = useState<DailyWorkSchedule | null>(null);
 
   // Pagination
@@ -242,6 +245,53 @@ export const WorkScheduleView: React.FC<WorkScheduleViewProps> = ({
     return filteredSchedules.slice(cardStartIndex, cardStartIndex + CARD_ITEMS_PER_PAGE);
   }, [filteredSchedules, cardStartIndex]);
 
+  // Find today's schedule
+  const todaySchedule = useMemo(() => {
+    if (schedules.length === 0) return null;
+    const now = new Date();
+    const d = now.getDate();
+    const m = now.getMonth() + 1;
+    const y = now.getFullYear();
+
+    const found = schedules.find(s => {
+      const parts = s.dateStr.split(/[-/.]/);
+      if (parts.length === 3) {
+        const sD = parseInt(parts[0], 10);
+        const sM = parseInt(parts[1], 10);
+        let sY = parseInt(parts[2], 10);
+        if (sY > 2500) sY -= 543;
+        return sD === d && sM === m && sY === y;
+      }
+      return false;
+    });
+
+    return found || schedules[0] || null;
+  }, [schedules]);
+
+  // Today's metrics (คำนวณเป็นจำนวนคนสำหรับวันปัจจุบัน)
+  const todayStats = useMemo(() => {
+    const totalEmployees = allEmployeesList.length || 10;
+    if (!todaySchedule) {
+      return {
+        todayOnDutyCount: 0,
+        totalEmployees,
+        todayLeavesAndOffCount: 0,
+        todayFormattedDate: 'วันนี้',
+      };
+    }
+
+    const todayOnDutyCount = todaySchedule.totalOnDuty;
+    const todayLeavesAndOffCount = todaySchedule.totalLeaves + todaySchedule.totalOffDuty;
+
+    return {
+      todayOnDutyCount,
+      totalEmployees,
+      todayLeavesAndOffCount,
+      todayFormattedDate: todaySchedule.formattedDate,
+      dayOfWeek: todaySchedule.dayOfWeek,
+    };
+  }, [todaySchedule, allEmployeesList]);
+
   // Overall Stats
   const stats = useMemo(() => {
     let totalDays = schedules.length;
@@ -255,14 +305,11 @@ export const WorkScheduleView: React.FC<WorkScheduleViewProps> = ({
       totalOffDutyCount += s.totalOffDuty;
     });
 
-    const avgOnDutyPerDay = totalDays > 0 ? (totalOnDutyShifts / totalDays).toFixed(1) : '0';
-
     return {
       totalDays,
       totalOnDutyShifts,
       totalLeavesCount,
       totalOffDutyCount,
-      avgOnDutyPerDay,
       totalEmployees: allEmployeesList.length
     };
   }, [schedules, allEmployeesList]);
@@ -339,12 +386,12 @@ export const WorkScheduleView: React.FC<WorkScheduleViewProps> = ({
 
           {/* Action Buttons Toolbar in Header */}
           <div className="flex items-center gap-2 sm:gap-2.5 shrink-0 flex-wrap">
-            {/* 1. ปุ่มสถิติและการวิเคราะห์ */}
+            {/* 1. ปุ่มสถิติและการวิเคราะห์ (กราฟวงกลม & ข้อมูลรวม) */}
             <button
               type="button"
               onClick={() => setShowAnalyticsModal(true)}
               className="p-2.5 rounded-xl bg-white/85 hover:bg-white text-orange-950 border border-orange-200/80 backdrop-blur-md transition-all hover:scale-105 active:scale-95 cursor-pointer flex items-center justify-center shadow-xs"
-              title={language === 'th' ? 'สถิติและสรุปตารางทำงาน' : 'Schedule Analytics'}
+              title={language === 'th' ? 'สถิติและกราฟวงกลมตารางทำงาน' : 'Schedule Analytics & Charts'}
               aria-label="Analytics"
             >
               <BarChart3 className="w-5 h-5" />
@@ -364,7 +411,7 @@ export const WorkScheduleView: React.FC<WorkScheduleViewProps> = ({
               </a>
             )}
 
-            {/* 3. ตัวกรองการค้นหา */}
+            {/* 3. ไอคอนตัวกรองการค้นหา */}
             <button
               type="button"
               onClick={() => setShowFilterModal(true)}
@@ -384,132 +431,159 @@ export const WorkScheduleView: React.FC<WorkScheduleViewProps> = ({
               )}
             </button>
 
-            {/* 4. สลับมุมมอง */}
+            {/* 4. สลับมุมมอง: 1.รายการ -> 2.การ์ด -> 3.กระดาน -> 4.ปฏิทิน */}
             <div className="flex items-center bg-white/85 backdrop-blur-md rounded-xl p-1 border border-orange-200/80 shadow-xs">
-              <button
-                type="button"
-                onClick={() => setViewMode('grid')}
-                className={`p-1.5 rounded-lg transition-all ${
-                  viewMode === 'grid'
-                    ? 'bg-orange-600 text-white shadow-xs'
-                    : 'text-orange-900 hover:text-orange-950 hover:bg-orange-100/50'
-                }`}
-                title={language === 'th' ? 'มุมมองการ์ดรายวัน' : 'Grid View'}
-              >
-                <LayoutGrid className="w-4 h-4" />
-              </button>
+              {/* 1. มุมมองรายการ (List/Table View) */}
               <button
                 type="button"
                 onClick={() => setViewMode('table')}
-                className={`p-1.5 rounded-lg transition-all ${
+                className={`p-1.5 rounded-lg transition-all cursor-pointer ${
                   viewMode === 'table'
-                    ? 'bg-orange-600 text-white shadow-xs'
+                    ? 'bg-orange-600 text-white shadow-xs font-bold'
                     : 'text-orange-900 hover:text-orange-950 hover:bg-orange-100/50'
                 }`}
-                title={language === 'th' ? 'มุมมองตารางรายการ' : 'Table View'}
+                title={language === 'th' ? 'มุมมองรายการ' : 'Table/List View'}
               >
                 <List className="w-4 h-4" />
               </button>
+
+              {/* 2. มุมมองการ์ด (Grid/Card View) */}
+              <button
+                type="button"
+                onClick={() => setViewMode('grid')}
+                className={`p-1.5 rounded-lg transition-all cursor-pointer ${
+                  viewMode === 'grid'
+                    ? 'bg-orange-600 text-white shadow-xs font-bold'
+                    : 'text-orange-900 hover:text-orange-950 hover:bg-orange-100/50'
+                }`}
+                title={language === 'th' ? 'มุมมองการ์ด' : 'Grid View'}
+              >
+                <LayoutGrid className="w-4 h-4" />
+              </button>
+
+              {/* 3. มุมมองกระดาน (Board/Kanban View) */}
+              <button
+                type="button"
+                onClick={() => setViewMode('board')}
+                className={`p-1.5 rounded-lg transition-all cursor-pointer ${
+                  viewMode === 'board'
+                    ? 'bg-orange-600 text-white shadow-xs font-bold'
+                    : 'text-orange-900 hover:text-orange-950 hover:bg-orange-100/50'
+                }`}
+                title={language === 'th' ? 'มุมมองกระดาน' : 'Kanban Board View'}
+              >
+                <Columns3 className="w-4 h-4" />
+              </button>
+
+              {/* 4. มุมมองปฏิทิน (Calendar View) */}
+              <button
+                type="button"
+                onClick={() => setViewMode('calendar')}
+                className={`p-1.5 rounded-lg transition-all cursor-pointer ${
+                  viewMode === 'calendar'
+                    ? 'bg-orange-600 text-white shadow-xs font-bold'
+                    : 'text-orange-900 hover:text-orange-950 hover:bg-orange-100/50'
+                }`}
+                title={language === 'th' ? 'มุมมองปฏิทิน' : 'Calendar View'}
+              >
+                <CalendarIcon className="w-4 h-4" />
+              </button>
             </div>
           </div>
         </div>
 
-        {/* Quick Filter Search Bar */}
-        <div className="relative z-10 grid grid-cols-1 sm:grid-cols-12 gap-2.5 pt-1">
-          <div className="relative sm:col-span-6">
-            <Search className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-orange-700/60" />
-            <input
-              type="text"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder={language === 'th' ? 'ค้นหาชื่อพนักงาน, วันที่, ฝ่ายงาน, หรือประเภทการลา...' : 'Search employee, date, department, leave type...'}
-              className="w-full pl-10 pr-9 py-2.5 rounded-xl bg-white/95 border border-orange-200 text-orange-950 placeholder-orange-800/40 text-sm focus:outline-none focus:ring-2 focus:ring-orange-500 shadow-xs"
-            />
-            {searchQuery && (
-              <button
-                type="button"
-                onClick={() => setSearchQuery('')}
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-orange-600 hover:text-orange-900"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            )}
-          </div>
-
-          <div className="sm:col-span-3">
-            <select
-              value={selectedMonth}
-              onChange={(e) => setSelectedMonth(e.target.value)}
-              className="w-full px-3 py-2.5 rounded-xl bg-white/95 border border-orange-200 text-orange-950 text-sm focus:outline-none focus:ring-2 focus:ring-orange-500 shadow-xs"
-            >
-              <option value="all">{language === 'th' ? '📅 ทุกเดือน' : '📅 All Months'}</option>
-              {monthOptions.map(m => (
-                <option key={m} value={m}>
-                  {language === 'th' ? `เดือน ${m}` : `Month ${m}`}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          <div className="sm:col-span-3">
-            <select
-              value={selectedEmployee}
-              onChange={(e) => setSelectedEmployee(e.target.value)}
-              className="w-full px-3 py-2.5 rounded-xl bg-white/95 border border-orange-200 text-orange-950 text-sm focus:outline-none focus:ring-2 focus:ring-orange-500 shadow-xs"
-            >
-              <option value="all">{language === 'th' ? '👤 พนักงานทุกคน' : '👤 All Staff'}</option>
-              {allEmployeesList.map(emp => (
-                <option key={emp} value={emp}>{emp}</option>
-              ))}
-            </select>
-          </div>
-        </div>
-
-        {/* Metric Pill Summary Bar */}
-        <div className="relative z-10 grid grid-cols-2 sm:grid-cols-4 gap-2.5 pt-2">
-          <div className="bg-white/80 backdrop-blur-md rounded-2xl p-3 border border-orange-200 shadow-xs flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-orange-100 flex items-center justify-center text-orange-700 shrink-0">
+        {/* Metric Pill Summary Bar - 3 Boxes for Current Day */}
+        <div className="relative z-10 grid grid-cols-1 sm:grid-cols-3 gap-3 pt-1">
+          {/* Box 1: จำนวนวันทำงาน (วันนี้) */}
+          <div className="bg-white/80 backdrop-blur-md rounded-2xl p-3.5 border border-orange-200 shadow-xs flex items-center gap-3">
+            <div className="w-11 h-11 rounded-xl bg-orange-100 flex items-center justify-center text-orange-700 shrink-0">
               <CalendarCheck className="w-5 h-5" />
             </div>
             <div className="min-w-0">
-              <div className="text-xs text-orange-900/70 font-semibold">{language === 'th' ? 'จำนวนวันทำงาน' : 'Total Days'}</div>
-              <div className="text-lg font-black text-orange-950">{stats.totalDays} วัน</div>
+              <div className="text-xs text-orange-900/70 font-semibold truncate">
+                {language === 'th' ? `จำนวนวันทำงาน (${todayStats.dayOfWeek || 'วันนี้'})` : 'Working Staff (Today)'}
+              </div>
+              <div className="text-xl font-black text-orange-950">
+                {todayStats.todayOnDutyCount} คน
+              </div>
             </div>
           </div>
 
-          <div className="bg-white/80 backdrop-blur-md rounded-2xl p-3 border border-orange-200 shadow-xs flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-blue-100 flex items-center justify-center text-blue-700 shrink-0">
+          {/* Box 2: พนักงานในระบบ */}
+          <div className="bg-white/80 backdrop-blur-md rounded-2xl p-3.5 border border-orange-200 shadow-xs flex items-center gap-3">
+            <div className="w-11 h-11 rounded-xl bg-blue-100 flex items-center justify-center text-blue-700 shrink-0">
               <Briefcase className="w-5 h-5" />
             </div>
             <div className="min-w-0">
-              <div className="text-xs text-orange-900/70 font-semibold">{language === 'th' ? 'พนักงานในระบบ' : 'Staff Count'}</div>
-              <div className="text-lg font-black text-blue-950">{stats.totalEmployees} คน</div>
+              <div className="text-xs text-orange-900/70 font-semibold truncate">
+                {language === 'th' ? 'พนักงานในระบบ' : 'Staff Count'}
+              </div>
+              <div className="text-xl font-black text-blue-950">
+                {todayStats.totalEmployees} คน
+              </div>
             </div>
           </div>
 
-          <div className="bg-white/80 backdrop-blur-md rounded-2xl p-3 border border-orange-200 shadow-xs flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-emerald-100 flex items-center justify-center text-emerald-700 shrink-0">
-              <Sun className="w-5 h-5" />
-            </div>
-            <div className="min-w-0">
-              <div className="text-xs text-orange-900/70 font-semibold">{language === 'th' ? 'ปฏิบัติงานเฉลี่ย' : 'Avg On Duty/Day'}</div>
-              <div className="text-lg font-black text-emerald-950">{stats.avgOnDutyPerDay} คน/วัน</div>
-            </div>
-          </div>
-
-          <div className="bg-white/80 backdrop-blur-md rounded-2xl p-3 border border-orange-200 shadow-xs flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-rose-100 flex items-center justify-center text-rose-700 shrink-0">
+          {/* Box 3: ลา / หยุด (วันนี้) */}
+          <div className="bg-white/80 backdrop-blur-md rounded-2xl p-3.5 border border-orange-200 shadow-xs flex items-center gap-3">
+            <div className="w-11 h-11 rounded-xl bg-rose-100 flex items-center justify-center text-rose-700 shrink-0">
               <Plane className="w-5 h-5" />
             </div>
             <div className="min-w-0">
-              <div className="text-xs text-orange-900/70 font-semibold">{language === 'th' ? 'วันลา/หยุดพิเศษ' : 'Total Leaves'}</div>
-              <div className="text-lg font-black text-rose-950">{stats.totalLeavesCount} ครั้ง</div>
+              <div className="text-xs text-orange-900/70 font-semibold truncate">
+                {language === 'th' ? `ลา / หยุด (${todayStats.dayOfWeek || 'วันนี้'})` : 'Leave / Off (Today)'}
+              </div>
+              <div className="text-xl font-black text-rose-950">
+                {todayStats.todayLeavesAndOffCount} คน
+              </div>
             </div>
           </div>
         </div>
       </div>
 
-      {/* 2. Main Content Area */}
+      {/* Active Filter Chips (if any filter is applied) */}
+      {activeFiltersCount > 0 && (
+        <div className="flex items-center gap-2 flex-wrap px-4 py-2.5 bg-amber-50/80 border border-amber-200/80 rounded-2xl text-xs">
+          <span className="font-bold text-amber-900 flex items-center gap-1">
+            <Filter className="w-3.5 h-3.5" />
+            ตัวกรองที่ใช้งาน ({activeFiltersCount}):
+          </span>
+          {searchQuery && (
+            <span className="px-2.5 py-1 rounded-lg bg-white border border-amber-200 text-amber-900 font-medium">
+              คำค้น: "{searchQuery}"
+            </span>
+          )}
+          {selectedDay !== 'all' && (
+            <span className="px-2.5 py-1 rounded-lg bg-white border border-amber-200 text-amber-900 font-medium">
+              วัน: {selectedDay}
+            </span>
+          )}
+          {selectedMonth !== 'all' && (
+            <span className="px-2.5 py-1 rounded-lg bg-white border border-amber-200 text-amber-900 font-medium">
+              เดือน: {selectedMonth}
+            </span>
+          )}
+          {selectedEmployee !== 'all' && (
+            <span className="px-2.5 py-1 rounded-lg bg-white border border-amber-200 text-amber-900 font-medium">
+              พนักงาน: {selectedEmployee}
+            </span>
+          )}
+          {selectedStatus !== 'all' && (
+            <span className="px-2.5 py-1 rounded-lg bg-white border border-amber-200 text-amber-900 font-medium">
+              สถานะ: {selectedStatus === 'has_leave' ? 'เฉพาะวันที่มีคนลา' : selectedStatus === 'weekend_only' ? 'เสาร์-อาทิตย์' : 'จันทร์-ศุกร์'}
+            </span>
+          )}
+          <button
+            type="button"
+            onClick={handleResetFilters}
+            className="ml-auto text-amber-800 hover:text-amber-950 font-bold underline cursor-pointer"
+          >
+            ล้างตัวกรอง
+          </button>
+        </div>
+      )}
+
+      {/* 2. Main Content Area according to viewMode */}
       {filteredSchedules.length === 0 ? (
         <div className="bg-white rounded-3xl p-12 text-center border border-slate-200 shadow-sm space-y-4">
           <div className="w-16 h-16 rounded-2xl bg-orange-50 text-orange-500 mx-auto flex items-center justify-center">
@@ -527,14 +601,26 @@ export const WorkScheduleView: React.FC<WorkScheduleViewProps> = ({
             <button
               type="button"
               onClick={handleResetFilters}
-              className="px-4 py-2 rounded-xl bg-orange-600 text-white font-medium text-sm hover:bg-orange-700 transition-all shadow-sm"
+              className="px-4 py-2 rounded-xl bg-orange-600 text-white font-medium text-sm hover:bg-orange-700 transition-all shadow-sm cursor-pointer"
             >
               {language === 'th' ? 'ล้างตัวกรองทั้งหมด' : 'Clear All Filters'}
             </button>
           )}
         </div>
+      ) : viewMode === 'calendar' ? (
+        /* 4. CALENDAR VIEW (Default) */
+        <WorkScheduleCalendarView
+          schedules={filteredSchedules}
+          onSelectSchedule={(s) => setSelectedSchedule(s)}
+        />
+      ) : viewMode === 'board' ? (
+        /* 3. KANBAN BOARD VIEW */
+        <WorkScheduleBoardView
+          schedules={filteredSchedules}
+          onSelectSchedule={(s) => setSelectedSchedule(s)}
+        />
       ) : viewMode === 'grid' ? (
-        /* GRID / CARD VIEW */
+        /* 2. GRID / CARD VIEW */
         <div className="space-y-5">
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
             {paginatedCardSchedules.map((schedule) => (
@@ -639,7 +725,7 @@ export const WorkScheduleView: React.FC<WorkScheduleViewProps> = ({
                   type="button"
                   disabled={validCardPage <= 1}
                   onClick={() => setCardCurrentPage(p => Math.max(1, p - 1))}
-                  className="p-2 rounded-lg border border-slate-200 text-slate-600 disabled:opacity-40 disabled:cursor-not-allowed hover:bg-slate-50"
+                  className="p-2 rounded-lg border border-slate-200 text-slate-600 disabled:opacity-40 disabled:cursor-not-allowed hover:bg-slate-50 cursor-pointer"
                 >
                   <ChevronLeft className="w-4 h-4" />
                 </button>
@@ -650,7 +736,7 @@ export const WorkScheduleView: React.FC<WorkScheduleViewProps> = ({
                   type="button"
                   disabled={validCardPage >= cardTotalPages}
                   onClick={() => setCardCurrentPage(p => Math.min(cardTotalPages, p + 1))}
-                  className="p-2 rounded-lg border border-slate-200 text-slate-600 disabled:opacity-40 disabled:cursor-not-allowed hover:bg-slate-50"
+                  className="p-2 rounded-lg border border-slate-200 text-slate-600 disabled:opacity-40 disabled:cursor-not-allowed hover:bg-slate-50 cursor-pointer"
                 >
                   <ChevronRight className="w-4 h-4" />
                 </button>
@@ -659,7 +745,7 @@ export const WorkScheduleView: React.FC<WorkScheduleViewProps> = ({
           )}
         </div>
       ) : (
-        /* TABLE VIEW */
+        /* 1. TABLE / LIST VIEW */
         <div className="space-y-4">
           <div className="bg-white rounded-3xl border border-slate-200 shadow-sm overflow-hidden">
             <div className="overflow-x-auto">
@@ -669,7 +755,7 @@ export const WorkScheduleView: React.FC<WorkScheduleViewProps> = ({
                     <th className="py-3.5 px-4">วัน / วันที่</th>
                     <th className="py-3.5 px-4">จำนวนเข้างาน</th>
                     <th className="py-3.5 px-4">รายชื่อพนักงานเข้ากะทำงาน</th>
-                    <th className="py-3.5 px-4">การลา / หยุดพิเศษ</th>
+                    <th className="py-3.5 px-4">ลา / หยุด</th>
                     <th className="py-3.5 px-4 text-center">จัดการ</th>
                   </tr>
                 </thead>
@@ -730,7 +816,7 @@ export const WorkScheduleView: React.FC<WorkScheduleViewProps> = ({
                             e.stopPropagation();
                             setSelectedSchedule(schedule);
                           }}
-                          className="px-3 py-1 rounded-lg bg-orange-50 hover:bg-orange-100 text-orange-700 font-semibold text-xs border border-orange-200 transition-colors"
+                          className="px-3 py-1 rounded-lg bg-orange-50 hover:bg-orange-100 text-orange-700 font-semibold text-xs border border-orange-200 transition-colors cursor-pointer"
                         >
                           ดูรายละเอียด
                         </button>
@@ -753,7 +839,7 @@ export const WorkScheduleView: React.FC<WorkScheduleViewProps> = ({
                   type="button"
                   disabled={validTablePage <= 1}
                   onClick={() => setTableCurrentPage(p => Math.max(1, p - 1))}
-                  className="p-2 rounded-lg border border-slate-200 text-slate-600 disabled:opacity-40 disabled:cursor-not-allowed hover:bg-slate-50"
+                  className="p-2 rounded-lg border border-slate-200 text-slate-600 disabled:opacity-40 disabled:cursor-not-allowed hover:bg-slate-50 cursor-pointer"
                 >
                   <ChevronLeft className="w-4 h-4" />
                 </button>
@@ -764,7 +850,7 @@ export const WorkScheduleView: React.FC<WorkScheduleViewProps> = ({
                   type="button"
                   disabled={validTablePage >= tableTotalPages}
                   onClick={() => setTableCurrentPage(p => Math.min(tableTotalPages, p + 1))}
-                  className="p-2 rounded-lg border border-slate-200 text-slate-600 disabled:opacity-40 disabled:cursor-not-allowed hover:bg-slate-50"
+                  className="p-2 rounded-lg border border-slate-200 text-slate-600 disabled:opacity-40 disabled:cursor-not-allowed hover:bg-slate-50 cursor-pointer"
                 >
                   <ChevronRight className="w-4 h-4" />
                 </button>
@@ -774,290 +860,41 @@ export const WorkScheduleView: React.FC<WorkScheduleViewProps> = ({
         </div>
       )}
 
-      {/* DETAIL MODAL FOR A SELECTED SCHEDULE DAY */}
-      {selectedSchedule && (
-        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in">
-          <div className="bg-white rounded-3xl max-w-2xl w-full max-h-[90vh] overflow-y-auto border border-slate-200 shadow-2xl p-6 space-y-6">
-            <div className="flex items-center justify-between border-b border-slate-100 pb-4">
-              <div className="flex items-center gap-3">
-                <div className="w-12 h-12 rounded-2xl bg-orange-100 text-orange-700 flex items-center justify-center">
-                  <CalendarDays className="w-6 h-6" />
-                </div>
-                <div>
-                  <div className="flex items-center gap-2">
-                    <span className={`px-2.5 py-0.5 rounded-full text-xs font-black border ${getDayBadge(selectedSchedule.dayOfWeek)}`}>
-                      {selectedSchedule.dayOfWeek}
-                    </span>
-                    <h2 className="text-xl font-bold text-slate-900">{selectedSchedule.formattedDate}</h2>
-                  </div>
-                  <p className="text-xs text-slate-500 mt-0.5">รายละเอียดกะการทำงานและสถานะพนักงานประจำวัน</p>
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={() => setSelectedSchedule(null)}
-                className="p-2 rounded-xl text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            {/* Shift Breakdown */}
-            <div className="space-y-4">
-              <div className="space-y-2">
-                <h4 className="text-sm font-bold text-slate-800 flex items-center gap-2">
-                  <Sun className="w-4 h-4 text-amber-600" />
-                  พนักงานปฏิบัติงานตามกะ ({selectedSchedule.onDutyEmployees.length} คน)
-                </h4>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                  {selectedSchedule.onDutyEmployees.map((emp, idx) => (
-                    <div
-                      key={idx}
-                      className="flex items-center justify-between p-3 rounded-2xl bg-emerald-50/60 border border-emerald-200"
-                    >
-                      <div className="flex items-center gap-2.5">
-                        <div className="w-8 h-8 rounded-xl bg-emerald-200/80 text-emerald-800 font-black text-xs flex items-center justify-center">
-                          {emp.name.slice(0, 2)}
-                        </div>
-                        <div>
-                          <div className="text-sm font-bold text-slate-900">{emp.name}</div>
-                          <div className="text-xs text-slate-500">{emp.department}</div>
-                        </div>
-                      </div>
-                      <span className="text-xs font-bold text-emerald-800 px-2 py-0.5 rounded-md bg-emerald-100">
-                        {emp.shiftTime}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              {/* Leaves Section */}
-              {selectedSchedule.leaveEmployees.length > 0 && (
-                <div className="space-y-2 pt-2 border-t border-slate-100">
-                  <h4 className="text-sm font-bold text-rose-800 flex items-center gap-2">
-                    <Plane className="w-4 h-4 text-rose-600" />
-                    พนักงานลา / วันหยุดพิเศษ ({selectedSchedule.leaveEmployees.length} คน)
-                  </h4>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                    {selectedSchedule.leaveEmployees.map((emp, idx) => (
-                      <div
-                        key={idx}
-                        className="flex items-center justify-between p-3 rounded-2xl bg-rose-50/60 border border-rose-200"
-                      >
-                        <div className="flex items-center gap-2.5">
-                          <div className="w-8 h-8 rounded-xl bg-rose-200/80 text-rose-800 font-black text-xs flex items-center justify-center">
-                            {emp.name.slice(0, 2)}
-                          </div>
-                          <div>
-                            <div className="text-sm font-bold text-slate-900">{emp.name}</div>
-                            <div className="text-xs text-slate-500">{emp.department}</div>
-                          </div>
-                        </div>
-                        <span className={`text-xs font-bold px-2 py-0.5 rounded-md border ${getLeaveTag(emp.leaveType)}`}>
-                          {emp.leaveType}
-                        </span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {/* Off Duty Section */}
-              {selectedSchedule.offDutyEmployees.length > 0 && (
-                <div className="space-y-2 pt-2 border-t border-slate-100">
-                  <h4 className="text-sm font-bold text-slate-700 flex items-center gap-2">
-                    <Moon className="w-4 h-4 text-slate-500" />
-                    วันหยุดประจำสัปดาห์ / ไม่เข้ากะ ({selectedSchedule.offDutyEmployees.length} คน)
-                  </h4>
-                  <div className="flex flex-wrap gap-2">
-                    {selectedSchedule.offDutyEmployees.map((emp, idx) => (
-                      <span
-                        key={idx}
-                        className="inline-flex items-center gap-1.5 px-3 py-1 rounded-xl bg-slate-100 text-slate-700 text-xs font-semibold border border-slate-200"
-                      >
-                        <UserX className="w-3.5 h-3.5 text-slate-400" />
-                        {emp.name} ({emp.department})
-                      </span>
-                    ))}
-                  </div>
-                </div>
-              )}
-            </div>
-
-            <div className="flex justify-end pt-4 border-t border-slate-100">
-              <button
-                type="button"
-                onClick={() => setSelectedSchedule(null)}
-                className="px-5 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-sm transition-colors"
-              >
-                ปิดหน้าต่าง
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      {/* DETAIL MODAL */}
+      <WorkScheduleDetailModal
+        schedule={selectedSchedule}
+        onClose={() => setSelectedSchedule(null)}
+        getDayBadge={getDayBadge}
+        getLeaveTag={getLeaveTag}
+      />
 
       {/* FILTER MODAL */}
-      {showFilterModal && (
-        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in">
-          <div className="bg-white rounded-3xl max-w-md w-full border border-slate-200 shadow-2xl p-6 space-y-5">
-            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-              <div className="flex items-center gap-2 font-bold text-slate-900 text-lg">
-                <Filter className="w-5 h-5 text-orange-600" />
-                ตัวกรองตารางทำงาน
-              </div>
-              <button
-                type="button"
-                onClick={() => setShowFilterModal(false)}
-                className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
+      <WorkScheduleFilterModal
+        isOpen={showFilterModal}
+        onClose={() => setShowFilterModal(false)}
+        searchQuery={searchQuery}
+        setSearchQuery={setSearchQuery}
+        selectedDay={selectedDay}
+        setSelectedDay={setSelectedDay}
+        selectedMonth={selectedMonth}
+        setSelectedMonth={setSelectedMonth}
+        selectedEmployee={selectedEmployee}
+        setSelectedEmployee={setSelectedEmployee}
+        selectedStatus={selectedStatus}
+        setSelectedStatus={setSelectedStatus}
+        dayOptions={dayOptions}
+        monthOptions={monthOptions}
+        allEmployees={allEmployeesList}
+        onResetFilters={handleResetFilters}
+      />
 
-            <div className="space-y-4">
-              <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">เลือกวันในสัปดาห์</label>
-                <select
-                  value={selectedDay}
-                  onChange={(e) => setSelectedDay(e.target.value)}
-                  className="w-full px-3 py-2 rounded-xl border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-orange-500"
-                >
-                  <option value="all">ทุกวันในสัปดาห์</option>
-                  {dayOptions.map(d => (
-                    <option key={d} value={d}>{d}</option>
-                  ))}
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">เลือกเดือน</label>
-                <select
-                  value={selectedMonth}
-                  onChange={(e) => setSelectedMonth(e.target.value)}
-                  className="w-full px-3 py-2 rounded-xl border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-orange-500"
-                >
-                  <option value="all">ทุกเดือน</option>
-                  {monthOptions.map(m => (
-                    <option key={m} value={m}>เดือน {m}</option>
-                  ))}
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">เลือกพนักงาน</label>
-                <select
-                  value={selectedEmployee}
-                  onChange={(e) => setSelectedEmployee(e.target.value)}
-                  className="w-full px-3 py-2 rounded-xl border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-orange-500"
-                >
-                  <option value="all">พนักงานทุกคน</option>
-                  {allEmployeesList.map(e => (
-                    <option key={e} value={e}>{e}</option>
-                  ))}
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">ประเภทสถานะ</label>
-                <select
-                  value={selectedStatus}
-                  onChange={(e) => setSelectedStatus(e.target.value)}
-                  className="w-full px-3 py-2 rounded-xl border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-orange-500"
-                >
-                  <option value="all">ทั้งหมด</option>
-                  <option value="has_leave">เฉพาะวันที่มีพนักงานลา</option>
-                  <option value="weekend_only">เฉพาะวันเสาร์-อาทิตย์</option>
-                  <option value="weekday_only">เฉพาะวันจันทร์-ศุกร์</option>
-                </select>
-              </div>
-            </div>
-
-            <div className="flex items-center justify-between pt-4 border-t border-slate-100">
-              <button
-                type="button"
-                onClick={handleResetFilters}
-                className="text-xs font-bold text-orange-600 hover:text-orange-800"
-              >
-                ล้างค่าตัวกรอง
-              </button>
-              <button
-                type="button"
-                onClick={() => setShowFilterModal(false)}
-                className="px-5 py-2.5 rounded-xl bg-orange-600 hover:bg-orange-700 text-white font-bold text-sm shadow-sm"
-              >
-                นำไปใช้
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ANALYTICS MODAL */}
-      {showAnalyticsModal && (
-        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in">
-          <div className="bg-white rounded-3xl max-w-2xl w-full max-h-[90vh] overflow-y-auto border border-slate-200 shadow-2xl p-6 space-y-6">
-            <div className="flex items-center justify-between border-b border-slate-100 pb-4">
-              <div className="flex items-center gap-3">
-                <div className="w-12 h-12 rounded-2xl bg-orange-100 text-orange-700 flex items-center justify-center">
-                  <BarChart3 className="w-6 h-6" />
-                </div>
-                <div>
-                  <h2 className="text-xl font-bold text-slate-900">สรุปสถิติตารางทำงาน</h2>
-                  <p className="text-xs text-slate-500">ข้อมูลการเข้ากะและการลาของพนักงานในระบบ</p>
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={() => setShowAnalyticsModal(false)}
-                className="p-2 rounded-xl text-slate-400 hover:text-slate-700 hover:bg-slate-100"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-              <div className="p-4 rounded-2xl bg-orange-50/80 border border-orange-200 text-center">
-                <div className="text-xs font-semibold text-orange-800">วันทำงานทั้งหมด</div>
-                <div className="text-2xl font-black text-orange-950 mt-1">{stats.totalDays} วัน</div>
-              </div>
-              <div className="p-4 rounded-2xl bg-emerald-50/80 border border-emerald-200 text-center">
-                <div className="text-xs font-semibold text-emerald-800">จำนวนครั้งเข้างานรวม</div>
-                <div className="text-2xl font-black text-emerald-950 mt-1">{stats.totalOnDutyShifts} กะ</div>
-              </div>
-              <div className="p-4 rounded-2xl bg-rose-50/80 border border-rose-200 text-center">
-                <div className="text-xs font-semibold text-rose-800">จำนวนการลา/หยุดพิเศษ</div>
-                <div className="text-2xl font-black text-rose-950 mt-1">{stats.totalLeavesCount} ครั้ง</div>
-              </div>
-            </div>
-
-            <div className="space-y-3">
-              <h4 className="text-sm font-bold text-slate-800">รายชื่อพนักงานทั้งหมด ({allEmployeesList.length} ท่าน):</h4>
-              <div className="flex flex-wrap gap-2">
-                {allEmployeesList.map((emp, i) => (
-                  <span
-                    key={i}
-                    className="px-3 py-1.5 rounded-xl bg-slate-100 text-slate-800 font-medium text-xs border border-slate-200"
-                  >
-                    {emp}
-                  </span>
-                ))}
-              </div>
-            </div>
-
-            <div className="flex justify-end pt-4 border-t border-slate-100">
-              <button
-                type="button"
-                onClick={() => setShowAnalyticsModal(false)}
-                className="px-5 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-sm"
-              >
-                ปิดหน้าต่าง
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      {/* ANALYTICS MODAL WITH PIE CHART */}
+      <WorkScheduleAnalyticsModal
+        isOpen={showAnalyticsModal}
+        onClose={() => setShowAnalyticsModal(false)}
+        schedules={filteredSchedules}
+        allEmployees={allEmployeesList}
+      />
     </div>
   );
 };

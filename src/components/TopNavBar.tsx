@@ -15,6 +15,7 @@ import {
 import { NavigationTab, LaundryOrder } from '../types';
 import { useLanguage, LANGUAGE_CONFIGS, getLanguageConfig } from '../contexts/LanguageContext';
 import { FlagIcon } from './FlagIcon';
+import { RotatingAvatar } from './RotatingAvatar';
 
 import { DEFAULT_ADMIN_USER, AdminUserAccount, isUserAdminOrSupervisor } from '../data/mockData';
 
@@ -91,9 +92,12 @@ export const TopNavBar: React.FC<TopNavBarProps> = ({
           <Menu className="w-5 h-5" />
         </button>
 
-        <span className="font-semibold text-base text-[#002045] md:hidden truncate max-w-[160px]">
-          {t.appName}
-        </span>
+        <div className="flex items-center gap-2 md:hidden">
+          <RotatingAvatar size={30} showSparkle={false} />
+          <span className="font-semibold text-base text-[#002045] truncate max-w-[160px]">
+            {t.appName}
+          </span>
+        </div>
 
         {/* Global Search Bar (on_left style matching screenshot) */}
         <div className="hidden sm:flex items-center relative w-64 md:w-80">
@@ -317,10 +321,11 @@ export const TopNavBar: React.FC<TopNavBarProps> = ({
         ) : (
           <button
             onClick={onLogin}
-            className="flex items-center gap-1.5 px-3 py-1.5 sm:px-3.5 sm:py-1.5 bg-[#002045] hover:bg-[#003366] text-white text-xs font-bold rounded-xl shadow-xs transition-all active:scale-[0.98] cursor-pointer shrink-0"
+            className="p-2 text-[#002045] hover:text-[#0061a5] hover:bg-[#d2e4ff]/40 bg-slate-100/90 rounded-full transition-all duration-200 flex items-center justify-center cursor-pointer shadow-2xs active:scale-95 border border-slate-200/80 shrink-0"
+            aria-label={t.signIn}
+            title={language === 'th' ? 'เข้าสู่ระบบ (Sign In)' : t.signIn}
           >
-            <LogIn className="w-3.5 h-3.5 text-[#66affe] shrink-0" />
-            <span className="truncate">{t.signIn}</span>
+            <LogIn className="w-5 h-5 text-[#002045]" />
           </button>
         )}
       </div>
