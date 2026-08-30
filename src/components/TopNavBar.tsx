@@ -8,11 +8,15 @@ import {
   Check, 
   Settings, 
   User, 
-  LogOut,
-  LogIn,
-  Globe,
-  HeartHandshake,
-  ExternalLink
+  LogOut, 
+  LogIn, 
+  Globe, 
+  HeartHandshake, 
+  ExternalLink,
+  LayoutGrid,
+  Building2,
+  Mail,
+  Server
 } from 'lucide-react';
 import { NavigationTab, LaundryOrder } from '../types';
 import { useLanguage, LANGUAGE_CONFIGS, getLanguageConfig } from '../contexts/LanguageContext';
@@ -58,6 +62,7 @@ export const TopNavBar: React.FC<TopNavBarProps> = ({
   const { language, setLanguage, t } = useLanguage();
   const [profileDropdownOpen, setProfileDropdownOpen] = useState(false);
   const [langDropdownOpen, setLangDropdownOpen] = useState(false);
+  const [servicesDropdownOpen, setServicesDropdownOpen] = useState(false);
 
   const currentLang = getLanguageConfig(language);
 
@@ -126,24 +131,172 @@ export const TopNavBar: React.FC<TopNavBarProps> = ({
 
       {/* Right: Actions & User Avatar */}
       <div className="flex items-center gap-2 md:gap-3">
-        {/* Welfare (สวัสดิการ) Link - Restricted to Admin and Page Managers Only (Icon-only วางไว้หน้าไอคอนเปลี่ยนภาษา) */}
+        {/* Services & Portals Dropdown (สวัสดิการ + Zycoda) - Restricted to Admin and Page Managers Only (In front of Language Switcher) */}
         {(isUserAdmin || isSuperAdmin || currentUser?.isAdmin) && (
-          <a
-            href="https://script.google.com/macros/s/AKfycbzWFzj_Qwy743_V7jeMlqufsK1n8xQYfCcSCqLIIK2WEeI01C76WealY4zEk87HW6-U4w/exec"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="p-2 bg-white hover:bg-rose-50/80 text-rose-600 hover:text-rose-700 border border-rose-200/90 hover:border-rose-300 rounded-xl transition-all cursor-pointer shadow-xs group flex items-center justify-center"
-            title={language === 'th' ? 'สวัสดิการ (เฉพาะผู้ดูแลและแอดมินเพจ) - เปิดในแท็บใหม่' : 'Welfare System (Admin & Page Manager Only) - Open in new tab'}
-            aria-label={language === 'th' ? 'สวัสดิการ' : 'Welfare'}
-          >
-            <HeartHandshake className="w-4 h-4 text-rose-500 group-hover:scale-110 transition-transform" />
-          </a>
+          <div className="relative">
+            <button
+              onClick={() => {
+                setServicesDropdownOpen(!servicesDropdownOpen);
+                if (langDropdownOpen) setLangDropdownOpen(false);
+                if (profileDropdownOpen) setProfileDropdownOpen(false);
+              }}
+              className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border transition-all cursor-pointer shadow-xs group ${
+                servicesDropdownOpen
+                  ? 'bg-blue-50/90 border-[#0061a5] text-[#0061a5] ring-2 ring-[#0061a5]/20'
+                  : 'bg-white hover:bg-[#d2e4ff]/40 border-[#c4c6cf] hover:border-[#0061a5] text-[#43474e] hover:text-[#002045]'
+              }`}
+              title={language === 'th' ? 'ระบบบริการและลิงก์ภายนอก (สวัสดิการ, Zycoda) - เฉพาะผู้ดูแลและแอดมิน' : 'Services & Portals (Welfare, Zycoda) - Admin & Manager Only'}
+              aria-label="Services and external portals"
+            >
+              <LayoutGrid className="w-4 h-4 text-[#0061a5] group-hover:scale-110 transition-transform" />
+              <ChevronDown className={`w-3.5 h-3.5 text-[#74777f] group-hover:text-[#0061a5] transition-transform ${servicesDropdownOpen ? 'rotate-180 text-[#0061a5]' : ''}`} />
+            </button>
+
+            {servicesDropdownOpen && (
+              <>
+                <div
+                  className="fixed inset-0 z-40"
+                  onClick={() => setServicesDropdownOpen(false)}
+                />
+                <div className="absolute right-0 sm:left-0 sm:right-auto mt-2 w-72 bg-white rounded-2xl shadow-2xl border border-[#e2e8f0] py-2 z-50 animate-in fade-in zoom-in-95 duration-100">
+                  <div className="px-3.5 py-2 text-[11px] font-bold text-[#74777f] uppercase tracking-wider border-b border-[#f3f3f4] flex items-center justify-between">
+                    <span className="flex items-center gap-1.5 text-[#002045]">
+                      <LayoutGrid className="w-3.5 h-3.5 text-[#0061a5]" />
+                      {language === 'th' ? 'ระบบและลิงก์ด่วน (เฉพาะผู้ดูแล)' : 'Services & Quick Links (Admin Only)'}
+                    </span>
+                  </div>
+
+                  <div className="p-1.5 space-y-1">
+                    {/* 1. Zimbra (Webmail) - บน สวัสดิการ */}
+                    <a
+                      href="https://mail.pbplc.co.th/"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      onClick={() => setServicesDropdownOpen(false)}
+                      className="w-full p-2.5 rounded-xl text-left text-xs flex items-center justify-between transition-all hover:bg-sky-50/70 border border-transparent hover:border-sky-200 group cursor-pointer"
+                    >
+                      <div className="flex items-center gap-2.5 min-w-0">
+                        <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-sky-50 to-blue-100 border border-sky-200/80 flex items-center justify-center shrink-0 shadow-2xs group-hover:scale-105 group-hover:bg-sky-600 transition-all">
+                          <Mail className="w-4 h-4 text-sky-600 group-hover:text-white transition-colors" />
+                        </div>
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-1.5">
+                            <span className="font-bold text-[#002045] group-hover:text-sky-700 transition-colors">
+                              Zimbra
+                            </span>
+                            <span className="text-[9px] font-bold px-1.5 py-0.2 bg-sky-100 text-sky-800 rounded-full border border-sky-200">
+                              Webmail
+                            </span>
+                          </div>
+                          <p className="text-[10px] text-[#74777f] truncate mt-0.5">
+                            mail.pbplc.co.th
+                          </p>
+                        </div>
+                      </div>
+                      <ExternalLink className="w-3.5 h-3.5 text-[#74777f] group-hover:text-sky-600 shrink-0 ml-1.5 transition-colors" />
+                    </a>
+
+                    {/* 2. สวัสดิการ (Welfare) */}
+                    <a
+                      href="https://script.google.com/macros/s/AKfycbzWFzj_Qwy743_V7jeMlqufsK1n8xQYfCcSCqLIIK2WEeI01C76WealY4zEk87HW6-U4w/exec"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      onClick={() => setServicesDropdownOpen(false)}
+                      className="w-full p-2.5 rounded-xl text-left text-xs flex items-center justify-between transition-all hover:bg-rose-50/70 border border-transparent hover:border-rose-200 group cursor-pointer"
+                    >
+                      <div className="flex items-center gap-2.5 min-w-0">
+                        <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-rose-50 to-pink-100 border border-rose-200/80 flex items-center justify-center shrink-0 shadow-2xs group-hover:scale-105 group-hover:bg-rose-500 transition-all">
+                          <HeartHandshake className="w-4 h-4 text-rose-600 group-hover:text-white transition-colors" />
+                        </div>
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-1.5">
+                            <span className="font-bold text-[#002045] group-hover:text-rose-700 transition-colors">
+                              {language === 'th' ? 'สวัสดิการ' : 'Welfare System'}
+                            </span>
+                            <span className="text-[9px] font-bold px-1.5 py-0.2 bg-rose-100 text-rose-800 rounded-full border border-rose-200">
+                              Welfare
+                            </span>
+                          </div>
+                          <p className="text-[10px] text-[#74777f] truncate mt-0.5">
+                            {language === 'th' ? 'ระบบสวัสดิการพนักงานและแอดมินเพจ' : 'Employee & Welfare Portal'}
+                          </p>
+                        </div>
+                      </div>
+                      <ExternalLink className="w-3.5 h-3.5 text-[#74777f] group-hover:text-rose-600 shrink-0 ml-1.5 transition-colors" />
+                    </a>
+
+                    {/* 3. Zycoda (Farmhouse) */}
+                    <a
+                      href="https://farmhouse.zycoda.com/auth/login"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      onClick={() => setServicesDropdownOpen(false)}
+                      className="w-full p-2.5 rounded-xl text-left text-xs flex items-center justify-between transition-all hover:bg-indigo-50/70 border border-transparent hover:border-indigo-200 group cursor-pointer"
+                    >
+                      <div className="flex items-center gap-2.5 min-w-0">
+                        <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-indigo-50 to-blue-100 border border-indigo-200/80 flex items-center justify-center shrink-0 shadow-2xs group-hover:scale-105 group-hover:bg-indigo-600 transition-all">
+                          <Building2 className="w-4 h-4 text-indigo-600 group-hover:text-white transition-colors" />
+                        </div>
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-1.5">
+                            <span className="font-bold text-[#002045] group-hover:text-indigo-700 transition-colors">
+                              Zycoda
+                            </span>
+                            <span className="text-[9px] font-bold px-1.5 py-0.2 bg-indigo-100 text-indigo-800 rounded-full border border-indigo-200">
+                              Farmhouse
+                            </span>
+                          </div>
+                          <p className="text-[10px] text-[#74777f] truncate mt-0.5">
+                            farmhouse.zycoda.com/auth/login
+                          </p>
+                        </div>
+                      </div>
+                      <ExternalLink className="w-3.5 h-3.5 text-[#74777f] group-hover:text-indigo-600 shrink-0 ml-1.5 transition-colors" />
+                    </a>
+
+                    {/* 4. JCS (Job / Control / System) - ใต้ Zycoda */}
+                    <a
+                      href="http://fac.farmhouse.co.th:81/jcs/login.aspx"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      onClick={() => setServicesDropdownOpen(false)}
+                      className="w-full p-2.5 rounded-xl text-left text-xs flex items-center justify-between transition-all hover:bg-emerald-50/70 border border-transparent hover:border-emerald-200 group cursor-pointer"
+                    >
+                      <div className="flex items-center gap-2.5 min-w-0">
+                        <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-emerald-50 to-teal-100 border border-emerald-200/80 flex items-center justify-center shrink-0 shadow-2xs group-hover:scale-105 group-hover:bg-emerald-600 transition-all">
+                          <Server className="w-4 h-4 text-emerald-600 group-hover:text-white transition-colors" />
+                        </div>
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-1.5">
+                            <span className="font-bold text-[#002045] group-hover:text-emerald-700 transition-colors">
+                              JCS
+                            </span>
+                            <span className="text-[9px] font-bold px-1.5 py-0.2 bg-emerald-100 text-emerald-800 rounded-full border border-emerald-200">
+                              System
+                            </span>
+                          </div>
+                          <p className="text-[10px] text-[#74777f] truncate mt-0.5">
+                            fac.farmhouse.co.th:81/jcs
+                          </p>
+                        </div>
+                      </div>
+                      <ExternalLink className="w-3.5 h-3.5 text-[#74777f] group-hover:text-emerald-600 shrink-0 ml-1.5 transition-colors" />
+                    </a>
+                  </div>
+                </div>
+              </>
+            )}
+          </div>
         )}
 
         {/* Quick Language Toggle Pill with Flag Only */}
         <div className="relative">
           <button
-            onClick={() => setLangDropdownOpen(!langDropdownOpen)}
+            onClick={() => {
+              setLangDropdownOpen(!langDropdownOpen);
+              if (servicesDropdownOpen) setServicesDropdownOpen(false);
+              if (profileDropdownOpen) setProfileDropdownOpen(false);
+            }}
             className="flex items-center gap-1.5 px-2 py-1.5 bg-white hover:bg-[#d2e4ff]/40 border border-[#c4c6cf] hover:border-[#0061a5] rounded-xl transition-all cursor-pointer shadow-xs group"
             title={`${currentLang.nativeName} (${currentLang.englishName}) - Switch Language / สลับภาษา`}
           >

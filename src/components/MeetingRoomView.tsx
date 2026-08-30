@@ -42,22 +42,37 @@ const BACKGROUND_POLL_INTERVAL_MS = 20000; // Auto-update in background every 20
 const TABLE_ITEMS_PER_PAGE = 20; // 20 items per page in table view
 const CARD_ITEMS_PER_PAGE = 6;   // 6 items per page in card view
 
-// Helper to parse booking date string (D/M/YYYY or DD-MM-YYYY)
+// Helper to parse booking date string (D/M/YYYY, DD-MM-YYYY, or YYYY-MM-DD)
 function parseBookingDate(dateStr?: string): Date | null {
   if (!dateStr || !dateStr.trim()) return null;
   const clean = dateStr.trim();
   const parts = clean.split(/[-/.]/);
   if (parts.length === 3) {
-    const day = parseInt(parts[0], 10);
-    const month = parseInt(parts[1], 10) - 1;
-    let year = parseInt(parts[2], 10);
-    if (year < 100) {
-      year += 2000;
-    } else if (year > 2500) {
-      year -= 543;
+    const p0 = parseInt(parts[0], 10);
+    const p1 = parseInt(parts[1], 10);
+    let p2 = parseInt(parts[2], 10);
+
+    // If format is YYYY-MM-DD
+    if (p0 > 1000) {
+      let yr = p0;
+      if (yr > 2500) yr -= 543;
+      const month = p1 - 1;
+      const day = p2;
+      const d = new Date(yr, month, day);
+      if (!isNaN(d.getTime())) return d;
+    } else {
+      // Format is DD/MM/YYYY or D/M/YYYY
+      const day = p0;
+      const month = p1 - 1;
+      let year = p2;
+      if (year < 100) {
+        year += 2000;
+      } else if (year > 2500) {
+        year -= 543;
+      }
+      const d = new Date(year, month, day);
+      if (!isNaN(d.getTime())) return d;
     }
-    const d = new Date(year, month, day);
-    if (!isNaN(d.getTime())) return d;
   }
   return null;
 }
@@ -231,24 +246,60 @@ export const MeetingRoomView: React.FC<MeetingRoomViewProps> = ({
     );
   };
 
-  // Metric KPI calculations for current day (วันปัจจุบัน)
-  const todayBookings = useMemo(() => {
-    return bookings.filter((b) => isBookingToday(b.bookingDate));
-  }, [bookings]);
+  // Filtered Bookings excluding room filter (so TPM 1 and TPM 2 breakdown counts reflect other active filters)
+  const nonRoomFilteredBookings = useMemo(() => {
+    return bookings.filter((booking) => {
+      // Department filter
+      if (selectedDepartment !== 'all' && booking.department !== selectedDepartment) {
+        return false;
+      }
 
-  const todayCount = todayBookings.length;
-  const todayTpm1Count = useMemo(() => todayBookings.filter((b) => b.room.toUpperCase().includes('TPM 1')).length, [todayBookings]);
-  const todayTpm2Count = useMemo(() => todayBookings.filter((b) => b.room.toUpperCase().includes('TPM 2')).length, [todayBookings]);
-  const todayAttendees = useMemo(() => todayBookings.reduce((sum, b) => sum + (b.attendeesCount || 0), 0), [todayBookings]);
+      // Year filter
+      const bookingDate = parseBookingDate(booking.bookingDate);
+      if (selectedYear !== 'all') {
+        if (!bookingDate || String(bookingDate.getFullYear()) !== selectedYear) {
+          return false;
+        }
+      }
 
-  const todayThaiDateStr = useMemo(() => {
-    const now = new Date();
-    const thaiMonths = [
-      'ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.',
-      'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.'
-    ];
-    return `${now.getDate()} ${thaiMonths[now.getMonth()]} ${now.getFullYear() + 543}`;
-  }, []);
+      // Date Range (startDate - endDate)
+      if (startDate) {
+        const start = new Date(startDate);
+        start.setHours(0, 0, 0, 0);
+        if (!bookingDate || bookingDate < start) {
+          return false;
+        }
+      }
+      if (endDate) {
+        const end = new Date(endDate);
+        end.setHours(23, 59, 59, 999);
+        if (!bookingDate || bookingDate > end) {
+          return false;
+        }
+      }
+
+      // Status filter
+      if (selectedStatus !== 'all' && booking.status !== selectedStatus) {
+        return false;
+      }
+
+      // Search query
+      if (searchQuery.trim()) {
+        const query = searchQuery.toLowerCase().trim();
+        const matchSubject = (booking.subject || '').toLowerCase().includes(query);
+        const matchDept = (booking.department || '').toLowerCase().includes(query);
+        const matchRoom = (booking.room || '').toLowerCase().includes(query);
+        const matchPhone = (booking.phoneNumber || '').toLowerCase().includes(query);
+        const matchDate = (booking.bookingDate || '').toLowerCase().includes(query);
+        const matchSeq = String(booking.seq).includes(query);
+        if (!matchSubject && !matchDept && !matchRoom && !matchPhone && !matchDate && !matchSeq) {
+          return false;
+        }
+      }
+
+      return true;
+    });
+  }, [bookings, selectedDepartment, selectedYear, selectedStatus, startDate, endDate, searchQuery]);
 
   // Active filters count
   const activeFiltersCount = useMemo(() => {
@@ -262,6 +313,59 @@ export const MeetingRoomView: React.FC<MeetingRoomViewProps> = ({
     if (endDate) count++;
     return count;
   }, [searchQuery, selectedRoom, selectedDepartment, selectedYear, selectedStatus, startDate, endDate]);
+
+  const hasActiveFilters = activeFiltersCount > 0;
+
+  // Bookings specifically for today (วันปัจจุบัน)
+  const todayBookings = useMemo(() => {
+    return bookings.filter((b) => isBookingToday(b.bookingDate));
+  }, [bookings]);
+
+  const todayThaiDateStr = useMemo(() => {
+    const now = new Date();
+    const thaiMonths = [
+      'ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.',
+      'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.'
+    ];
+    return `${now.getDate()} ${thaiMonths[now.getMonth()]} ${now.getFullYear() + 543}`;
+  }, []);
+
+  // Dynamic KPI calculations: Show today's data by default, or filtered data when filters are active
+  const statsTotalCount = useMemo(() => {
+    if (!hasActiveFilters) {
+      return todayBookings.length;
+    }
+    return selectedRoom === 'all' ? nonRoomFilteredBookings.length : baseFilteredBookings.length;
+  }, [hasActiveFilters, todayBookings.length, selectedRoom, nonRoomFilteredBookings.length, baseFilteredBookings.length]);
+
+  const statsTpm1Count = useMemo(() => {
+    if (!hasActiveFilters) {
+      return todayBookings.filter((b) => b.room.toUpperCase().includes('TPM 1')).length;
+    }
+    return nonRoomFilteredBookings.filter((b) => b.room.toUpperCase().includes('TPM 1')).length;
+  }, [hasActiveFilters, todayBookings, nonRoomFilteredBookings]);
+
+  const statsTpm2Count = useMemo(() => {
+    if (!hasActiveFilters) {
+      return todayBookings.filter((b) => b.room.toUpperCase().includes('TPM 2')).length;
+    }
+    return nonRoomFilteredBookings.filter((b) => b.room.toUpperCase().includes('TPM 2')).length;
+  }, [hasActiveFilters, todayBookings, nonRoomFilteredBookings]);
+
+  const statsTotalAttendees = useMemo(() => {
+    if (!hasActiveFilters) {
+      return todayBookings.reduce((sum, b) => sum + (Number(b.attendeesCount) || 0), 0);
+    }
+    const list = selectedRoom === 'all' ? nonRoomFilteredBookings : baseFilteredBookings;
+    return list.reduce((sum, b) => sum + (Number(b.attendeesCount) || 0), 0);
+  }, [hasActiveFilters, todayBookings, selectedRoom, nonRoomFilteredBookings, baseFilteredBookings]);
+
+  const statsDenominator = useMemo(() => {
+    if (!hasActiveFilters) {
+      return todayBookings.length;
+    }
+    return nonRoomFilteredBookings.length;
+  }, [hasActiveFilters, todayBookings.length, nonRoomFilteredBookings.length]);
 
   // Filtered and Sorted Bookings
   const filteredBookings = useMemo(() => {
@@ -515,9 +619,9 @@ export const MeetingRoomView: React.FC<MeetingRoomViewProps> = ({
           </div>
         </div>
 
-        {/* Integrated Metric KPI Cards Row - Today's Statistics */}
+        {/* Integrated Metric KPI Cards Row - Dynamic Filter-Aware Statistics */}
         <div className="relative z-10 grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4 pt-4 border-t border-blue-200/60">
-          {/* Card 1: การจองทั้งหมด (วันนี้) */}
+          {/* Card 1: จองทั้งหมด */}
           <div 
             onClick={() => setSelectedRoom('all')}
             className={`p-4 rounded-2xl backdrop-blur-md border transition-all cursor-pointer ${
@@ -527,20 +631,26 @@ export const MeetingRoomView: React.FC<MeetingRoomViewProps> = ({
             }`}
           >
             <div className="flex items-center justify-between text-blue-900 text-xs font-bold mb-1.5">
-              <span>{language === 'th' ? 'จองทั้งหมด (วันนี้)' : 'Total Bookings (Today)'}</span>
+              <span>
+                {!hasActiveFilters 
+                  ? (language === 'th' ? 'จองทั้งหมด (วันนี้)' : 'Total Bookings (Today)') 
+                  : (language === 'th' ? 'จองทั้งหมด (ตามตัวกรอง)' : 'Total Bookings (Filtered)')}
+              </span>
               <div className="w-7 h-7 rounded-lg bg-blue-100 flex items-center justify-center">
                 <Layers className="w-4 h-4 text-blue-800" />
               </div>
             </div>
-            <p className="text-2xl sm:text-3xl font-black text-[#002045]">{todayCount}</p>
+            <p className="text-2xl sm:text-3xl font-black text-[#002045]">{statsTotalCount}</p>
             <span className="text-[11px] text-blue-800/80">
-              {language === 'th' ? `รายการจองวันนี้ (${todayThaiDateStr})` : `Bookings today (${todayThaiDateStr})`}
+              {!hasActiveFilters
+                ? (language === 'th' ? `รายการจองวันนี้ (${todayThaiDateStr})` : `Bookings today (${todayThaiDateStr})`)
+                : (language === 'th' ? `ตามตัวกรองที่เลือก (${activeFiltersCount} ตัวกรอง)` : `Filtered results (${activeFiltersCount} filters)`)}
             </span>
           </div>
 
-          {/* Card 2: ห้อง TPM 1 (วันนี้) */}
+          {/* Card 2: ห้องประชุม TPM 1 */}
           <div 
-            onClick={() => setSelectedRoom('TPM 1')}
+            onClick={() => setSelectedRoom(selectedRoom === 'TPM 1' ? 'all' : 'TPM 1')}
             className={`p-4 rounded-2xl backdrop-blur-md border transition-all cursor-pointer ${
               selectedRoom === 'TPM 1'
                 ? 'bg-blue-50/95 border-blue-400 shadow-md ring-2 ring-blue-300 scale-[1.02]'
@@ -548,25 +658,33 @@ export const MeetingRoomView: React.FC<MeetingRoomViewProps> = ({
             }`}
           >
             <div className="flex items-center justify-between text-blue-900 text-xs font-bold mb-1.5">
-              <span>{language === 'th' ? 'ห้องประชุม TPM 1 (วันนี้)' : 'Room TPM 1 (Today)'}</span>
+              <span>
+                {!hasActiveFilters 
+                  ? (language === 'th' ? 'ห้องประชุม TPM 1 (วันนี้)' : 'Room TPM 1 (Today)') 
+                  : (language === 'th' ? 'ห้องประชุม TPM 1' : 'Room TPM 1')}
+              </span>
               <div className="w-7 h-7 rounded-lg bg-blue-100 flex items-center justify-center">
                 <DoorOpen className="w-4 h-4 text-blue-700" />
               </div>
             </div>
             <div className="flex items-baseline gap-2">
-              <p className="text-2xl sm:text-3xl font-black text-blue-800">{todayTpm1Count}</p>
-              {todayCount > 0 && (
+              <p className="text-2xl sm:text-3xl font-black text-blue-800">{statsTpm1Count}</p>
+              {statsDenominator > 0 && (
                 <span className="text-xs font-bold text-blue-600">
-                  ({Math.round((todayTpm1Count / todayCount) * 100)}%)
+                  ({Math.round((statsTpm1Count / statsDenominator) * 100)}%)
                 </span>
               )}
             </div>
-            <span className="text-[11px] text-blue-700/90">{language === 'th' ? 'รายการจองห้อง 1 วันนี้' : 'Bookings in TPM 1 today'}</span>
+            <span className="text-[11px] text-blue-700/90">
+              {!hasActiveFilters
+                ? (language === 'th' ? 'รายการจองห้อง 1 วันนี้' : 'Bookings in TPM 1 today')
+                : (language === 'th' ? 'รายการจองห้อง TPM 1 ตามตัวกรอง' : 'Bookings in TPM 1 matching filters')}
+            </span>
           </div>
 
-          {/* Card 3: ห้อง TPM 2 (วันนี้) */}
+          {/* Card 3: ห้องประชุม TPM 2 */}
           <div 
-            onClick={() => setSelectedRoom('TPM 2')}
+            onClick={() => setSelectedRoom(selectedRoom === 'TPM 2' ? 'all' : 'TPM 2')}
             className={`p-4 rounded-2xl backdrop-blur-md border transition-all cursor-pointer ${
               selectedRoom === 'TPM 2'
                 ? 'bg-purple-50/95 border-purple-400 shadow-md ring-2 ring-purple-300 scale-[1.02]'
@@ -574,34 +692,50 @@ export const MeetingRoomView: React.FC<MeetingRoomViewProps> = ({
             }`}
           >
             <div className="flex items-center justify-between text-purple-900 text-xs font-bold mb-1.5">
-              <span>{language === 'th' ? 'ห้องประชุม TPM 2 (วันนี้)' : 'Room TPM 2 (Today)'}</span>
+              <span>
+                {!hasActiveFilters 
+                  ? (language === 'th' ? 'ห้องประชุม TPM 2 (วันนี้)' : 'Room TPM 2 (Today)') 
+                  : (language === 'th' ? 'ห้องประชุม TPM 2' : 'Room TPM 2')}
+              </span>
               <div className="w-7 h-7 rounded-lg bg-purple-100 flex items-center justify-center">
                 <DoorOpen className="w-4 h-4 text-purple-700" />
               </div>
             </div>
             <div className="flex items-baseline gap-2">
-              <p className="text-2xl sm:text-3xl font-black text-purple-800">{todayTpm2Count}</p>
-              {todayCount > 0 && (
+              <p className="text-2xl sm:text-3xl font-black text-purple-800">{statsTpm2Count}</p>
+              {statsDenominator > 0 && (
                 <span className="text-xs font-bold text-purple-600">
-                  ({Math.round((todayTpm2Count / todayCount) * 100)}%)
+                  ({Math.round((statsTpm2Count / statsDenominator) * 100)}%)
                 </span>
               )}
             </div>
-            <span className="text-[11px] text-purple-700/90">{language === 'th' ? 'รายการจองห้อง 2 วันนี้' : 'Bookings in TPM 2 today'}</span>
+            <span className="text-[11px] text-purple-700/90">
+              {!hasActiveFilters
+                ? (language === 'th' ? 'รายการจองห้อง 2 วันนี้' : 'Bookings in TPM 2 today')
+                : (language === 'th' ? 'รายการจองห้อง TPM 2 ตามตัวกรอง' : 'Bookings in TPM 2 matching filters')}
+            </span>
           </div>
 
-          {/* Card 4: ผู้เข้าร่วมสะสมทั้งหมด (วันนี้) */}
+          {/* Card 4: ผู้เข้าร่วมสะสมทั้งหมด */}
           <div 
             className="p-4 rounded-2xl backdrop-blur-md border bg-white/75 border-blue-200/80 shadow-xs"
           >
             <div className="flex items-center justify-between text-emerald-900 text-xs font-bold mb-1.5">
-              <span>{language === 'th' ? 'ผู้เข้าร่วมสะสมทั้งหมด (วันนี้)' : 'Total Attendees (Today)'}</span>
+              <span>
+                {!hasActiveFilters 
+                  ? (language === 'th' ? 'ผู้เข้าร่วมสะสมทั้งหมด (วันนี้)' : 'Total Attendees (Today)') 
+                  : (language === 'th' ? 'ผู้เข้าร่วมสะสมทั้งหมด' : 'Total Cumulative Attendees')}
+              </span>
               <div className="w-7 h-7 rounded-lg bg-emerald-100 flex items-center justify-center">
                 <Users className="w-4 h-4 text-emerald-700" />
               </div>
             </div>
-            <p className="text-2xl sm:text-3xl font-black text-emerald-800">{todayAttendees}</p>
-            <span className="text-[11px] text-emerald-700/90">{language === 'th' ? 'จำนวนคนรวมทุกการประชุมวันนี้' : 'Total participants today'}</span>
+            <p className="text-2xl sm:text-3xl font-black text-emerald-800">{statsTotalAttendees}</p>
+            <span className="text-[11px] text-emerald-700/90">
+              {!hasActiveFilters
+                ? (language === 'th' ? 'จำนวนคนรวมทุกการประชุมวันนี้' : 'Total participants today')
+                : (language === 'th' ? 'จำนวนคนรวมทุกการประชุมตามตัวกรอง' : 'Total participants matching filters')}
+            </span>
           </div>
         </div>
       </div>

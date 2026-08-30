@@ -879,12 +879,6 @@ export const LaundryView: React.FC<LaundryViewProps> = ({
               <p className="text-xs text-[#74777f] max-w-sm mx-auto mt-1">
                 {t.noOrdersDesc}
               </p>
-              <button
-                onClick={onOpenCreateOrder}
-                className="mt-4 px-4 py-2 bg-[#0061a5] text-white text-xs font-semibold rounded-lg hover:bg-[#004d84] cursor-pointer"
-              >
-                {t.createIntakeBtn}
-              </button>
             </div>
           ) : viewMode === 'calendar' ? (
             /* Calendar View */

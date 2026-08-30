@@ -58,40 +58,17 @@ export const MeetingRoomCalendarView: React.FC<MeetingRoomCalendarViewProps> = (
     return bookings.filter(b => b.room.toUpperCase().includes(selectedRoomFilter));
   }, [bookings, selectedRoomFilter]);
 
-  // Set default calendar view to August 2026 or earliest month with bookings
+  // Default calendar view to current month (เดือนปัจจุบัน)
   const [currentDate, setCurrentDate] = useState<Date>(() => {
-    for (const b of bookings) {
-      const parsed = extractBookingDate(b);
-      if (parsed) {
-        return new Date(parsed.year, parsed.month, 1);
-      }
-    }
     const today = new Date();
     return new Date(today.getFullYear(), today.getMonth(), 1);
   });
 
   const [selectedDay, setSelectedDay] = useState<number | null>(() => {
-    for (const b of bookings) {
-      const parsed = extractBookingDate(b);
-      if (parsed) {
-        return parsed.day;
-      }
-    }
     return new Date().getDate();
   });
 
   const [showDayModal, setShowDayModal] = useState<boolean>(false);
-
-  // Sync date if bookings loaded asynchronously
-  useEffect(() => {
-    if (bookings.length > 0) {
-      const first = extractBookingDate(bookings[0]);
-      if (first) {
-        setCurrentDate(new Date(first.year, first.month, 1));
-        setSelectedDay(first.day);
-      }
-    }
-  }, [bookings]);
 
   const year = currentDate.getFullYear();
   const month = currentDate.getMonth();

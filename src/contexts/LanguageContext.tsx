@@ -373,7 +373,7 @@ export const translations: Record<Language, Translations> = {
     normalPriority: 'ปกติ (Normal)',
     allServices: 'ทุกประเภทบริการ',
     noOrdersFound: 'ไม่พบรายการซัก-อบผ้า',
-    noOrdersDesc: 'ไม่พบรายการที่ตรงกับตัวกรองที่เลือก ลองเปลี่ยนขั้นตอนหรือบันทึกรายการใหม่',
+    noOrdersDesc: 'ไม่พบรายการที่ตรงกับตัวกรองหรือเงื่อนไขการค้นหาที่เลือก',
     createIntakeBtn: '+ บันทึกรายการ',
     commercialEquipmentTitle: 'เครื่องซักอุตสาหกรรม, เครื่องอบ และเครื่องรีดไอน้ำ',
     commercialEquipmentDesc: 'ข้อมูลสถานะแบบเรียลไทม์, ตัวนับเวลา, ความจุถัง และการบำรุงรักษาเชิงป้องกัน',
